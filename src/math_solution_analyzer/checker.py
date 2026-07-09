@@ -9,6 +9,11 @@ from pydantic import ValidationError
 
 from .schema import Issue, Severity, SolutionStep, StepAnalysis, StepStatus
 
+try:
+    from .models.predict import load_default_classifier
+except Exception:  # pragma: no cover - ML dependencies can be absent in minimal installs
+    load_default_classifier = None
+
 
 class StepFeedback(BaseModel):
     status: StepStatus
@@ -32,6 +37,9 @@ class StepChecker(Protocol):
 
 class HeuristicStepChecker:
     """Deterministic fallback that catches obvious MVP-level issues without an API key."""
+
+    def __init__(self, use_ml: bool = True) -> None:
+        self.ml_classifier = load_default_classifier() if use_ml and load_default_classifier else None
 
     def check_step(
         self,
@@ -96,6 +104,26 @@ class HeuristicStepChecker:
         if issues and not fixes:
             fixes.append("Исправьте отмеченный переход и проверьте, не зависит ли от него следующий шаг.")
 
+        ml_prediction = None
+        if self.ml_classifier:
+            ml_prediction = self.ml_classifier.predict(
+                problem=problem,
+                previous_steps=[step.text for step in previous_steps],
+                current_step=current_step.text,
+                step_index=current_step.index,
+            )
+            if ml_prediction.label != StepStatus.CORRECT and status == StepStatus.CORRECT:
+                status = ml_prediction.label
+                issues.append(
+                    Issue(
+                        severity=Severity.WARNING,
+                        title="ML-модель пометила шаг как подозрительный",
+                        explanation=f"Baseline-классификатор предсказал {ml_prediction.label.value} / {ml_prediction.error_type}.",
+                        recommendation="Проверьте этот переход вручную или передайте его LLM-объяснителю.",
+                    )
+                )
+                fixes.append("Добавьте пояснение к шагу или перепроверьте формальный переход.")
+
         return StepAnalysis(
             step=current_step,
             status=status,
@@ -104,6 +132,7 @@ class HeuristicStepChecker:
             missing_steps=missing_steps,
             how_to_fix=fixes,
             confidence=0.45,
+            ml_prediction=ml_prediction,
         )
 
 

@@ -64,6 +64,12 @@ if st.button("Проверить решение", type="primary"):
                         st.markdown("**Замечания**")
                         for issue in step.possible_errors:
                             st.markdown(f"- `{issue.severity.value}` {issue.title}: {issue.explanation}")
+                    if step.ml_prediction:
+                        st.markdown("**ML baseline**")
+                        st.markdown(
+                            f"- `{step.ml_prediction.label.value}` / `{step.ml_prediction.error_type}` "
+                            f"confidence={step.ml_prediction.confidence}"
+                        )
                     if step.missing_steps:
                         st.markdown("**Пропущено**")
                         for missing in step.missing_steps:

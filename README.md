@@ -1,19 +1,120 @@
-# Система анализа решений математических задач
+# Math Problem Checker
 
-MVP-инструмент проверяет текстовое или LaTeX-решение математической задачи по шагам. Он разбивает решение на логические фрагменты, проверяет каждый шаг отдельно, собирает структурированный JSON через Pydantic и формирует итоговый отчёт:
+ML-система для пошаговой классификации решений математических задач. Модель получает условие, предыдущие шаги и текущий шаг, а затем предсказывает:
 
-- что верно;
-- где возможная ошибка;
-- какой шаг пропущен;
-- как исправить.
+- `correct`;
+- `incorrect`;
+- `incomplete`;
+- `suspicious`;
+- тип ошибки;
+- уверенность.
 
-Проект специально не отправляет всё решение в LLM одним запросом. Пайплайн устроен так:
+LLM используется опционально: не как единственный решатель, а как explanation generator поверх уже найденных сигналов. Основной пайплайн:
 
-1. `parser` нормализует условие и решение.
-2. `step_splitter` выделяет отдельные логические шаги.
-3. `checker` проверяет каждый шаг отдельно через LangChain/OpenAI или локальные эвристики.
-4. `schema` задаёт структурированный формат ответа через Pydantic.
-5. `report_generator` агрегирует результаты в итоговый отчёт.
+```text
+Parser -> Step Splitter -> Feature Extractor -> SymPy Checker -> ML Classifier -> Report Generator
+                                                                      |
+                                                                      v
+                                                        Optional LLM Explanation
+```
+
+## ML-задача
+
+Формулировка: классификация шагов решения математической задачи на корректные, ошибочные, неполные и подозрительные с последующим объяснением типа ошибки.
+
+Вход классификатора:
+
+```text
+[PROBLEM] условие задачи
+[PREVIOUS] предыдущие шаги
+[STEP] текущий шаг
+```
+
+Выход:
+
+```json
+{
+  "label": "incorrect",
+  "error_type": "calculation_error",
+  "confidence": 0.91
+}
+```
+
+## Датасет
+
+В проекте есть воспроизводимый синтетический датасет для baseline-экспериментов:
+
+```bash
+PYTHONPATH=src python -m math_solution_analyzer.dataset --n 800 --output data/processed/step_classification.csv
+```
+
+Схема строки:
+
+```json
+{
+  "problem": "...",
+  "previous_steps": "...",
+  "current_step": "...",
+  "next_step": "...",
+  "step_index": 2,
+  "label": "incorrect",
+  "error_type": "calculation_error",
+  "explanation": "..."
+}
+```
+
+Покрытые типы ошибок:
+
+- `calculation_error`;
+- `sign_error`;
+- `wrong_formula`;
+- `missing_condition`;
+- `invalid_transition`;
+- `wrong_substitution`;
+- `wrong_final_answer`;
+- `probability_without_replacement`.
+
+## Baseline
+
+Реализован честный baseline без нейросетей:
+
+- TF-IDF по тексту `[PROBLEM] [PREVIOUS] [STEP]`;
+- числовые признаки шага;
+- SymPy-признак арифметической ошибки;
+- Logistic Regression.
+
+Обучение:
+
+```bash
+PYTHONPATH=src python -m math_solution_analyzer.models.train \
+  --dataset data/processed/step_classification.csv \
+  --model models/tfidf_logreg.joblib \
+  --metrics reports/metrics.json
+```
+
+Оценка и confusion matrix:
+
+```bash
+PYTHONPATH=src python -m math_solution_analyzer.evaluation \
+  --model models/tfidf_logreg.joblib \
+  --dataset data/processed/step_classification.csv \
+  --metrics reports/evaluation.json \
+  --confusion-matrix reports/confusion_matrix.png
+```
+
+## Метрики
+
+Метрики сохраняются в `reports/metrics.json` и `reports/evaluation.json`.
+
+| Модель | Accuracy | Macro-F1 | Error step F1 |
+| --- | ---: | ---: | ---: |
+| Rule-based baseline | planned | planned | planned |
+| TF-IDF + LogReg | 1.000 | 1.000 | 1.000 |
+| CatBoost | planned | planned | planned |
+| RuBERT-tiny | planned | planned | planned |
+| Hybrid SymPy + RuBERT | planned | planned | planned |
+
+Текущие значения получены на синтетическом шаблонном split из `data/processed/step_classification.csv`; они нужны как воспроизводимый baseline, а не как финальная оценка качества на реальных ученических решениях.
 
 ## Быстрый старт
 
@@ -24,11 +125,13 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Для LLM-проверки укажите `OPENAI_API_KEY` и, при необходимости, `OPENAI_MODEL`:
+Сгенерировать датасет, обучить baseline и запустить тесты:
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-export OPENAI_MODEL="gpt-4.1-mini"
+PYTHONPATH=src python -m math_solution_analyzer.dataset --n 800
+PYTHONPATH=src python -m math_solution_analyzer.models.train
+PYTHONPATH=src python -m math_solution_analyzer.evaluation
+PYTHONPATH=src pytest
 ```
 
 Запуск Streamlit:
@@ -37,24 +140,11 @@ export OPENAI_MODEL="gpt-4.1-mini"
 PYTHONPATH=src streamlit run app.py
 ```
 
-Локальный тест без API-ключа:
+Для опционального LLM-объяснения укажите:
 
 ```bash
-PYTHONPATH=src pytest
-```
-
-## Пример использования из Python
-
-```python
-from math_solution_analyzer import analyze_solution
-
-report = analyze_solution(
-    problem="Вычислите 2 + 2.",
-    solution="1. Складываем числа.\n2. 2 + 2 = 5.\n3. Ответ: 5.",
-    use_llm=False,
-)
-
-print(report.model_dump_json(indent=2))
+export OPENAI_API_KEY="sk-..."
+export OPENAI_MODEL="gpt-4.1-mini"
 ```
 
 ## Структура проекта
@@ -62,31 +152,49 @@ print(report.model_dump_json(indent=2))
 ```text
 .
 ├── app.py
+├── data
+│   ├── raw
+│   └── processed
 ├── examples
 │   ├── inputs
 │   └── outputs
+├── models
+├── notebooks
+│   ├── eda.ipynb
+│   └── train_baseline.ipynb
+├── reports
+│   ├── metrics.json
+│   └── confusion_matrix.png
 ├── src/math_solution_analyzer
+│   ├── dataset.py
+│   ├── evaluation.py
+│   ├── features.py
 │   ├── checker.py
 │   ├── parser.py
 │   ├── pipeline.py
 │   ├── report_generator.py
 │   ├── schema.py
-│   └── step_splitter.py
+│   ├── step_splitter.py
+│   └── models
+│       ├── train.py
+│       └── predict.py
 └── tests
 ```
 
-## Демонстрационные задачи
+## Streamlit-приложение
 
-В папке `examples/inputs` лежат 5 примеров:
+Приложение принимает условие и решение, разбивает решение на шаги и показывает:
 
-- линейная алгебра: решение системы уравнений;
-- вероятность: условная вероятность;
-- математический анализ: производная произведения;
-- пределы: типичный пропуск обоснования;
-- арифметика: очевидная вычислительная ошибка.
+- что верно;
+- где возможная ошибка;
+- какой шаг пропущен;
+- как исправить;
+- предсказание ML baseline, если модель обучена и лежит в `models/tfidf_logreg.joblib`.
 
-Готовые JSON-ответы находятся в `examples/outputs`.
+## Формулировка для резюме
 
-## Ограничения MVP
+Разработала ML-систему для пошаговой классификации математических решений: собрала и разметила синтетический датасет ошибочных и корректных шагов, реализовала feature extraction с SymPy-признаками, обучила baseline-модель TF-IDF + Logistic Regression, сравнила качество по accuracy/macro-F1/step-level F1 и интегрировала классификатор в Streamlit-приложение.
 
-Локальная эвристика нужна для демонстрации и тестов без API-ключа. Она ловит очевидные вычислительные ошибки и пропущенные объяснения, но не заменяет полноценную LLM-проверку. При наличии `OPENAI_API_KEY` используется LangChain `ChatOpenAI` со структурированным выводом `StepAnalysis`.
+## Ограничения
+
+Текущий датасет синтетический и нужен для воспроизводимого pet-project baseline. Для production-качества его нужно расширить реальными школьными и вузовскими решениями, добавить ручную валидацию разметки и обучить transformer-based classifier.

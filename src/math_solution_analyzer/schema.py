@@ -14,6 +14,7 @@ class Severity(str, Enum):
 
 class StepStatus(str, Enum):
     CORRECT = "correct"
+    SUSPICIOUS = "suspicious"
     NEEDS_ATTENTION = "needs_attention"
     INCORRECT = "incorrect"
     INCOMPLETE = "incomplete"
@@ -40,6 +41,13 @@ class Issue(BaseModel):
     recommendation: str
 
 
+class MLStepPrediction(BaseModel):
+    label: StepStatus
+    error_type: str = "none"
+    confidence: float = Field(0.0, ge=0.0, le=1.0)
+    model_name: str = "unavailable"
+
+
 class StepAnalysis(BaseModel):
     step: SolutionStep
     status: StepStatus
@@ -48,6 +56,7 @@ class StepAnalysis(BaseModel):
     missing_steps: list[str] = Field(default_factory=list)
     how_to_fix: list[str] = Field(default_factory=list)
     confidence: float = Field(0.5, ge=0.0, le=1.0)
+    ml_prediction: MLStepPrediction | None = None
 
 
 class AnalysisReport(BaseModel):
