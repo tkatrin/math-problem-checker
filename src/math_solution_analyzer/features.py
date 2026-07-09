@@ -46,6 +46,8 @@ class StepFeatureRow:
     derivative_check_error: int
     linear_solution_check_error: int
     probability_fraction_warning: int
+    division_remainder_error: int
+    polynomial_factorization_error: int
 
     def as_dict(self) -> dict[str, int]:
         return self.__dict__.copy()
@@ -57,12 +59,13 @@ def extract_step_features(
     previous_steps: list[str],
     current_step: str,
     step_index: int,
+    expensive_symbolic: bool = True,
 ) -> dict[str, int]:
     text = current_step.lower()
     joined = f"{problem} {' '.join(previous_steps)} {current_step}"
     domains = detect_domain(problem)
-    equivalence = check_equation_equivalence(current_step)
-    derivative = check_derivative(problem, current_step)
+    equivalence = check_equation_equivalence(current_step) if expensive_symbolic else None
+    derivative = check_derivative(problem, current_step) if expensive_symbolic else None
     return StepFeatureRow(
         has_equality=int("=" in current_step),
         has_implication=int(any(marker in text for marker in ("=>", "следовательно", "значит", "therefore", "hence"))),
@@ -94,6 +97,8 @@ def extract_step_features(
         derivative_check_error=int(derivative is False),
         linear_solution_check_error=int(check_linear_equation_solution(problem, current_step) is False),
         probability_fraction_warning=int(check_fraction_probability(problem, current_step, previous_steps) is False),
+        division_remainder_error=int(check_division_remainder(current_step) is False),
+        polynomial_factorization_error=int(check_polynomial_factorization(current_step) is False),
     ).as_dict()
 
 
@@ -190,6 +195,43 @@ def check_fraction_probability(problem: str, step: str, previous_steps: list[str
     if current_fractions and current_fractions & previous_fractions:
         return False
     return True
+
+
+def check_division_remainder(step: str) -> bool | None:
+    """Validate statements such as ``194 / 11 = 17 remainder 9``."""
+
+    normalized = step.replace("÷", "/").replace("×", "*")
+    match = re.search(
+        r"(-?\d+)\s*/\s*(-?\d+)\s*=\s*(-?\d+).*?(?:remainder|остат(?:ок|ком))\s*(-?\d+)",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    dividend, divisor, quotient, remainder = (int(value) for value in match.groups())
+    if divisor == 0:
+        return None
+    expected_quotient, expected_remainder = divmod(dividend, divisor)
+    return quotient == expected_quotient and remainder == expected_remainder
+
+
+def check_polynomial_factorization(step: str) -> bool | None:
+    """Check whether a displayed quadratic and its claimed factors are equivalent."""
+
+    if sp is None:
+        return None
+    normalized = step.replace("^", "**").replace("\\[", " ").replace("\\]", " ")
+    match = re.search(r"([A-Za-z0-9+\-*/().\s]+)=\s*0.*?\(([^()]+)\)\s*\(([^()]+)\)\s*=\s*0", normalized)
+    if not match:
+        return None
+    polynomial, factor_one, factor_two = match.groups()
+    try:
+        x = sp.symbols("x")
+        left = sp.sympify(polynomial, locals={"x": x})
+        right = sp.sympify(f"({factor_one})*({factor_two})", locals={"x": x})
+        return bool(sp.simplify(left - right) == 0)
+    except Exception:
+        return None
 
 
 def _safe_eval_binary(left: str, op: str, right: str) -> float | None:

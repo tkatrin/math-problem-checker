@@ -97,7 +97,7 @@ def train_baseline(dataset_path: Path, model_path: Path, metrics_path: Path, tes
     return metrics
 
 
-def _build_features_frame(df: pd.DataFrame) -> pd.DataFrame:
+def _build_features_frame(df: pd.DataFrame, *, expensive_symbolic: bool = True) -> pd.DataFrame:
     rows: list[dict] = []
     for _, row in df.iterrows():
         previous_steps = str(row.get("previous_steps", "")).split(" ||| ") if pd.notna(row.get("previous_steps")) else []
@@ -108,6 +108,7 @@ def _build_features_frame(df: pd.DataFrame) -> pd.DataFrame:
             previous_steps=previous_steps,
             current_step=current_step,
             step_index=int(row["step_index"]),
+            expensive_symbolic=expensive_symbolic,
         )
         feature_row["model_text"] = make_model_text(problem, previous_steps, current_step)
         rows.append(feature_row)

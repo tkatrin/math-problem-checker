@@ -12,3 +12,6 @@ data/processed/prm800k_*.csv
 data/processed/processbench_*.csv
 models/prm800k_*.joblib
 reports/prm800k_*_predictions.json
+data/cache/
+models/binary_*.joblib
+reports/binary_*_predictions.json

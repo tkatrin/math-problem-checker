@@ -178,6 +178,8 @@ def _first_error_by_problem(rows: list[dict], *, label_key: str) -> dict[str, in
 
 def _predicted_first_error_by_problem(prediction_rows: list[dict], *, threshold: float, strategy: str) -> dict[str, int]:
     _validate_first_error_strategy(strategy)
+    if strategy == "argmax":
+        return _argmax_first_error_by_problem(prediction_rows, threshold=threshold)
     result: dict[str, int] = {}
     for row in sorted(prediction_rows, key=lambda item: (item["problem_id"], item["step_index"])):
         problem_id = row["problem_id"]
@@ -198,8 +200,19 @@ def _is_predicted_error_step(row: dict, *, threshold: float, strategy: str) -> b
 
 
 def _validate_first_error_strategy(strategy: str) -> None:
-    if strategy not in {"threshold", "hard_label", "hybrid"}:
-        raise ValueError("first_error_strategy must be one of: threshold, hard_label, hybrid")
+    if strategy not in {"threshold", "hard_label", "hybrid", "argmax"}:
+        raise ValueError("first_error_strategy must be one of: threshold, hard_label, hybrid, argmax")
+
+
+def _argmax_first_error_by_problem(prediction_rows: list[dict], *, threshold: float) -> dict[str, int]:
+    result: dict[str, int] = {}
+    rows_by_problem: dict[str, list[dict]] = {}
+    for row in prediction_rows:
+        rows_by_problem.setdefault(str(row["problem_id"]), []).append(row)
+    for problem_id, rows in rows_by_problem.items():
+        best = max(rows, key=lambda row: (float(row.get("p_incorrect", 0.0)), -int(row["step_index"])))
+        result[problem_id] = int(best["step_index"]) if float(best.get("p_incorrect", 0.0)) >= threshold else -1
+    return result
 
 
 def _metrics_by_source(df_test: pd.DataFrame, prediction_rows: list[dict], *, threshold: float, strategy: str) -> dict[str, dict]:
@@ -266,7 +279,7 @@ def main() -> None:
     parser.add_argument("--confusion-matrix", type=Path, default=Path("reports/confusion_matrix.png"))
     parser.add_argument("--predictions", type=Path, default=None)
     parser.add_argument("--first-error-threshold", type=float, default=0.5)
-    parser.add_argument("--first-error-strategy", choices=["threshold", "hard_label", "hybrid"], default="hybrid")
+    parser.add_argument("--first-error-strategy", choices=["threshold", "hard_label", "hybrid", "argmax"], default="hybrid")
     args = parser.parse_args()
     dataset_path = args.eval_dataset or args.dataset or Path("data/processed/step_classification.csv")
     print(

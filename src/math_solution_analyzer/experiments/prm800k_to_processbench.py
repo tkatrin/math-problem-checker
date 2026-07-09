@@ -156,7 +156,7 @@ def main() -> None:
     parser.add_argument("--predictions", type=Path, default=Path("reports/prm800k_to_processbench_predictions.json"))
     parser.add_argument("--error-analysis", type=Path, default=Path("reports/prm800k_to_processbench_error_analysis.md"))
     parser.add_argument("--first-error-threshold", type=float, default=0.5)
-    parser.add_argument("--first-error-strategy", choices=["threshold", "hard_label", "hybrid"], default="hybrid")
+    parser.add_argument("--first-error-strategy", choices=["threshold", "hard_label", "hybrid", "argmax"], default="hybrid")
     args = parser.parse_args()
 
     result = run_experiment(

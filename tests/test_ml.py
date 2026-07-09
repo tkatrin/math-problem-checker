@@ -12,7 +12,8 @@ from math_solution_analyzer.data_sources.processbench import normalize_processbe
 from math_solution_analyzer.data_sources.common import write_rows_csv
 from math_solution_analyzer.evaluation import evaluate
 from math_solution_analyzer.experiments.prm800k_to_processbench import _format_examples, run_experiment
-from math_solution_analyzer.features import extract_step_features
+from math_solution_analyzer.features import check_division_remainder, check_polynomial_factorization, extract_step_features
+from math_solution_analyzer.models.binary_benchmark import first_error_metrics, select_problem_groups_by_step_budget
 from math_solution_analyzer.models.predict import StepMLClassifier
 from math_solution_analyzer.models.train import train_baseline
 from math_solution_analyzer.schema import MLStepPrediction
@@ -198,6 +199,26 @@ def test_error_analysis_formats_step_text() -> None:
         ]
     )
     assert any("Step: Set up addition." in line for line in lines)
+
+
+def test_symbolic_validators_catch_remainder_and_factorization_errors() -> None:
+    assert check_division_remainder("194 / 11 = 17 with a remainder 9") is False
+    assert check_polynomial_factorization("x^2 - 2*x - 7 = 0; (x - 7)(x + 5) = 0") is False
+
+
+def test_binary_first_error_argmax_and_group_sampling() -> None:
+    rows = pd.DataFrame(
+        [
+            {"problem_id": "a", "step_index": 1, "label": "correct"},
+            {"problem_id": "a", "step_index": 2, "label": "incorrect"},
+            {"problem_id": "b", "step_index": 1, "label": "correct"},
+            {"problem_id": "b", "step_index": 2, "label": "correct"},
+        ]
+    )
+    metrics = first_error_metrics(rows, [0.2, 0.8, 0.1, 0.3], threshold=0.5, strategy="argmax")
+    assert metrics["first_error_accuracy"] == 1.0
+    sampled = select_problem_groups_by_step_budget(rows, 3, seed=7)
+    assert all(len(group) == 2 for _, group in sampled.groupby("problem_id"))
 
 
 def test_external_eval_saves_first_error_metrics_and_probabilities(tmp_path: Path) -> None:
