@@ -90,11 +90,11 @@ PYTHONPATH=src python -m math_solution_analyzer.data_sources.prm800k \
 
 ### ProcessBench
 
-ProcessBench содержит `problem`, список `steps` и `label` — индекс первого ошибочного шага или all-correct marker. Конвертация локального JSONL-экспорта:
+ProcessBench содержит `problem`, список `steps` и `label` — индекс первого ошибочного шага или all-correct marker. Адаптер принимает как JSONL, так и официальный JSON-массив:
 
 ```bash
 PYTHONPATH=src python -m math_solution_analyzer.data_sources.processbench \
-  --input data/raw/processbench/gsm8k.jsonl \
+  --input data/raw/processbench/math.json \
   --output data/processed/processbench_steps.csv
 ```
 
@@ -165,11 +165,13 @@ Experiment runner also writes `reports/prm800k_to_processbench_error_analysis.md
 | --- | --- | --- | ---: | ---: |
 | Rule-based baseline | - | toy synthetic | 0.5936 | см. `reports/evaluation.json` |
 | TF-IDF + numeric + SymPy LogReg | toy synthetic | toy synthetic group split | 0.9652 | 1.0000 |
-| TF-IDF + numeric + SymPy LogReg | PRM800K subset | ProcessBench | ready-to-run | ready-to-run |
+| TF-IDF + numeric + SymPy LogReg | PRM800K phase2 subset | ProcessBench math (1,000 задач) | 0.2898 | 0.2950 |
 | Embeddings + LogReg | PRM800K subset | ProcessBench | planned | planned |
 | Transformer fine-tuning | PRM800K | ProcessBench | planned | planned |
 
-Для отдельной задачи классификации `error_type` текущий toy baseline даёт `accuracy=0.9506`, `macro-F1=0.9633` на group split. Для ProcessBench дополнительно считаются `first_error_accuracy`, `first_error_macro_f1`, `all_correct_accuracy` и сохраняются probability scores по шагам: `p_correct`, `p_incorrect`, `p_suspicious`. First-error агрегация поддерживает стратегии `threshold`, `hard_label`, `hybrid`; `all_correct_accuracy` получает значение `not_applicable`, если в eval subset нет all-correct задач.
+Реальный эксперимент обучался на 11,922 шагах из 1,196 PRM800K траекторий и оценивался на 6,505 шагах из 1,000 ProcessBench math-задач. Использована стратегия first-error `threshold` с порогом `0.5`: step-level F1 `0.5302`, first-error macro-F1 `0.0957`, all-correct accuracy `0.3990`. Отчёт, confusion matrix и манифест источников: `reports/prm800k_phase2_subset_to_processbench_math_report.json`, `reports/prm800k_phase2_subset_to_processbench_math_confusion_matrix.png`, `reports/prm800k_phase2_subset_to_processbench_math_dataset_manifest.json`.
+
+Для отдельной задачи классификации `error_type` текущий toy baseline даёт `accuracy=0.9506`, `macro-F1=0.9633` на group split. На реальном переносе PRM800K -> ProcessBench error-type macro-F1 составляет `0.1729`: классы `no_progress` и `after_error_context` не совпадают между наборами, поэтому это ограничение нужно учитывать, а не скрывать. Для ProcessBench дополнительно считаются `first_error_accuracy`, `first_error_macro_f1`, `all_correct_accuracy` и сохраняются probability scores по шагам: `p_correct`, `p_incorrect`, `p_suspicious`. First-error агрегация поддерживает стратегии `threshold`, `hard_label`, `hybrid`; `all_correct_accuracy` получает значение `not_applicable`, если в eval subset нет all-correct задач.
 
 Ранний случайный split давал 1.000/1.000, но это было плохим сигналом: модель видела почти одинаковые шаблоны одной задачи в train и test. Поэтому текущая оценка считается только через group split по `problem_id`.
 

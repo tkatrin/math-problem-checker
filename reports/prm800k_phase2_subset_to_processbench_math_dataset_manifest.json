@@ -1,0 +1,45 @@
+{
+  "experiment": "prm800k_phase2_subset_to_processbench_math",
+  "retrieved_at": "2026-07-10",
+  "sources": {
+    "train": {
+      "name": "OpenAI PRM800K phase2_train",
+      "repository": "https://github.com/openai/prm800k",
+      "file_url": "https://media.githubusercontent.com/media/openai/prm800k/main/prm800k/data/phase2_train.jsonl",
+      "download_protocol": "HTTP Range bytes 0-10485759 from the official Git LFS file",
+      "raw_sha256": "bdeae483f298ff192cbe00f02b260673c1643bf84bc029e6e0c7872280c674f2",
+      "records_requested": 1200,
+      "normalized_problems": 1196,
+      "normalized_steps": 11922,
+      "label_counts": {
+        "correct": 10039,
+        "incorrect": 613,
+        "suspicious": 1270
+      }
+    },
+    "eval": {
+      "name": "Qwen ProcessBench math split",
+      "repository": "https://github.com/QwenLM/ProcessBench",
+      "file_url": "https://huggingface.co/datasets/Qwen/ProcessBench/resolve/main/math.json",
+      "raw_sha256": "60cb0d7a69cbec98d43cf50855b9b7e7294599c3c9a24bdd031abd18c3b6b136",
+      "normalized_problems": 1000,
+      "normalized_steps": 6505,
+      "label_counts": {
+        "correct": 3772,
+        "incorrect": 594,
+        "suspicious": 2139
+      }
+    }
+  },
+  "evaluation": {
+    "model": "TF-IDF + numeric features + LogisticRegression",
+    "first_error_strategy": "threshold",
+    "first_error_threshold": 0.5,
+    "label_macro_f1": 0.2898,
+    "step_level_f1": 0.5302,
+    "first_error_accuracy": 0.295,
+    "first_error_macro_f1": 0.0957,
+    "all_correct_accuracy": 0.399,
+    "error_type_macro_f1": 0.1729
+  }
+}

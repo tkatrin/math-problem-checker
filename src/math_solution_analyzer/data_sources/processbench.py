@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .common import iter_jsonl, make_row, write_rows_csv
+from .common import iter_json_records, make_row, write_rows_csv
 
 
 def normalize_processbench_record(record: dict, *, label_index_base: int = 0) -> list[dict[str, str | int]]:
@@ -54,7 +54,7 @@ def normalize_processbench_record(record: dict, *, label_index_base: int = 0) ->
 
 def read_processbench_jsonl(path: Path, *, label_index_base: int = 0, limit: int | None = None) -> list[dict[str, str | int]]:
     rows: list[dict[str, str | int]] = []
-    for index, record in enumerate(iter_jsonl(path)):
+    for index, record in enumerate(iter_json_records(path)):
         if limit is not None and index >= limit:
             break
         rows.extend(normalize_processbench_record(record, label_index_base=label_index_base))

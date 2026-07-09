@@ -6,11 +6,12 @@ import sys
 import pandas as pd
 
 from math_solution_analyzer.dataset import ERROR_TYPES, build_synthetic_dataset, save_dataset
+from math_solution_analyzer.data_sources.common import iter_json_records
 from math_solution_analyzer.data_sources.prm800k import normalize_prm800k_record
 from math_solution_analyzer.data_sources.processbench import normalize_processbench_record
 from math_solution_analyzer.data_sources.common import write_rows_csv
 from math_solution_analyzer.evaluation import evaluate
-from math_solution_analyzer.experiments.prm800k_to_processbench import run_experiment
+from math_solution_analyzer.experiments.prm800k_to_processbench import _format_examples, run_experiment
 from math_solution_analyzer.features import extract_step_features
 from math_solution_analyzer.models.predict import StepMLClassifier
 from math_solution_analyzer.models.train import train_baseline
@@ -175,6 +176,28 @@ def test_processbench_adapter_marks_first_error() -> None:
     assert [row["label"] for row in rows] == ["correct", "incorrect", "suspicious"]
     assert rows[1]["error_type"] == "process_error"
     assert rows[2]["error_type"] == "after_error_context"
+
+
+def test_json_records_reads_json_array_export(tmp_path: Path) -> None:
+    source = tmp_path / "processbench.json"
+    source.write_text('[{"id": "case-1"}]', encoding="utf-8")
+    assert list(iter_json_records(source)) == [{"id": "case-1"}]
+
+
+def test_error_analysis_formats_step_text() -> None:
+    lines = _format_examples(
+        [
+            {
+                "problem_id": "case-1",
+                "step_index": 1,
+                "true_label": "correct",
+                "predicted_label": "incorrect",
+                "p_incorrect": 0.8,
+                "current_step": "Set up addition.",
+            }
+        ]
+    )
+    assert any("Step: Set up addition." in line for line in lines)
 
 
 def test_external_eval_saves_first_error_metrics_and_probabilities(tmp_path: Path) -> None:

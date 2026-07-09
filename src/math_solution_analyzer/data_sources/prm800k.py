@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 from typing import Iterable
 
-from .common import iter_jsonl, make_row, write_rows_csv
+from .common import iter_json_records, make_row, write_rows_csv
 
 
 RATING_TO_LABEL = {
@@ -75,7 +75,7 @@ def normalize_prm800k_record(record: dict, *, selected_only: bool = True) -> lis
 
 def read_prm800k_jsonl(path: Path, *, selected_only: bool = True, limit: int | None = None) -> list[dict[str, str | int]]:
     rows: list[dict[str, str | int]] = []
-    for index, record in enumerate(iter_jsonl(path)):
+    for index, record in enumerate(iter_json_records(path)):
         if limit is not None and index >= limit:
             break
         rows.extend(normalize_prm800k_record(record, selected_only=selected_only))

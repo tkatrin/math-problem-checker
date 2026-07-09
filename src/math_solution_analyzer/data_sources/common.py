@@ -29,6 +29,23 @@ def iter_jsonl(path: Path) -> Iterable[dict]:
                 yield json.loads(line)
 
 
+def iter_json_records(path: Path) -> Iterable[dict]:
+    """Yield records from either a JSONL file or a JSON array export."""
+
+    if path.suffix.lower() == ".jsonl":
+        yield from iter_jsonl(path)
+        return
+
+    with path.open("r", encoding="utf-8") as f:
+        payload = json.load(f)
+    if not isinstance(payload, list):
+        raise ValueError(f"Expected a JSON array in {path}")
+    for record in payload:
+        if not isinstance(record, dict):
+            raise ValueError(f"Expected JSON object records in {path}")
+        yield record
+
+
 def write_rows_csv(rows: Iterable[dict], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8", newline="") as f:

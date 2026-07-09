@@ -99,7 +99,7 @@ def _write_error_analysis(result: dict, predictions_path: Path, output: Path) ->
             "",
             "## Notes",
             "",
-            "Inspect `reports/prm800k_to_processbench_predictions.json` for per-step probabilities:",
+            f"Inspect `{predictions_path.as_posix()}` for per-step probabilities:",
             "`p_correct`, `p_incorrect`, and `p_suspicious`.",
             "",
             "`all_correct_accuracy` is `not_applicable` when the eval subset has no all-correct solutions.",
@@ -130,11 +130,15 @@ def _format_examples(examples: list[dict]) -> list[str]:
         return ["No examples found."]
     lines: list[str] = []
     for row in examples:
+        step = " ".join(str(row.get("current_step", "")).split())
+        if len(step) > 320:
+            step = f"{step[:317]}..."
         lines.extend(
             [
                 f"- problem_id=`{row.get('problem_id')}`, step=`{row.get('step_index')}`, "
                 f"true=`{row.get('true_label')}`, pred=`{row.get('predicted_label')}`, "
                 f"p_incorrect=`{row.get('p_incorrect')}`",
+                f"  Step: {step}",
             ]
         )
     return lines

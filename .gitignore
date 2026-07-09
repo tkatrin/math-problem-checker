@@ -6,3 +6,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .DS_Store
+data/raw/*
+!data/raw/README.md
+data/processed/prm800k_*.csv
+data/processed/processbench_*.csv
+models/prm800k_*.joblib
+reports/prm800k_*_predictions.json

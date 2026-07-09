@@ -121,6 +121,8 @@ def _build_prediction_rows(
                 "problem_id": str(row["problem_id"]),
                 "source": str(row.get("source", "unknown")),
                 "step_index": int(row["step_index"]),
+                "problem": str(row["problem"]),
+                "current_step": str(row["current_step"]),
                 "true_label": str(row["label"]),
                 "predicted_label": str(label),
                 "true_error_type": str(row["error_type"]),
