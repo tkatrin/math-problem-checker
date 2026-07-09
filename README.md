@@ -42,10 +42,10 @@ Parser -> Step Splitter -> Feature Extractor -> SymPy Checker -> ML Classifier -
 
 ## Датасет
 
-В проекте есть воспроизводимый синтетический датасет для baseline-экспериментов:
+В проекте есть воспроизводимый синтетический датасет для baseline-экспериментов. Он содержит несколько доменов: арифметика, линейные и квадратные уравнения, системы, производные, интегралы, пределы, матрицы, комбинаторика и вероятность.
 
 ```bash
-PYTHONPATH=src python -m math_solution_analyzer.dataset --n 800 --output data/processed/step_classification.csv
+PYTHONPATH=src python -m math_solution_analyzer.dataset --n 2000 --output data/processed/step_classification.csv
 ```
 
 Схема строки:
@@ -79,9 +79,12 @@ PYTHONPATH=src python -m math_solution_analyzer.dataset --n 800 --output data/pr
 Реализован честный baseline без нейросетей:
 
 - TF-IDF по тексту `[PROBLEM] [PREVIOUS] [STEP]`;
-- числовые признаки шага;
-- SymPy-признак арифметической ошибки;
-- Logistic Regression.
+- числовые, структурные и доменные признаки шага;
+- SymPy-признаки арифметики, эквивалентности выражений, линейных уравнений, производных и вероятности без возвращения;
+- Logistic Regression для `label`;
+- отдельная Logistic Regression для `error_type`.
+
+Оценка использует `GroupShuffleSplit` по `problem_id`, поэтому шаги одной задачи не могут одновременно попасть в train и test. Это убирает главный источник завышения качества в случайном split.
 
 Обучение:
 
@@ -108,13 +111,15 @@ PYTHONPATH=src python -m math_solution_analyzer.evaluation \
 
 | Модель | Accuracy | Macro-F1 | Error step F1 |
 | --- | ---: | ---: | ---: |
-| Rule-based baseline | planned | planned | planned |
-| TF-IDF + LogReg | 1.000 | 1.000 | 1.000 |
+| Rule-based baseline | 0.6265 | 0.5936 | 0.6545 |
+| TF-IDF + numeric + SymPy LogReg | 0.9486 | 0.9638 | 0.9583 |
 | CatBoost | planned | planned | planned |
 | RuBERT-tiny | planned | planned | planned |
 | Hybrid SymPy + RuBERT | planned | planned | planned |
 
-Текущие значения получены на синтетическом шаблонном split из `data/processed/step_classification.csv`; они нужны как воспроизводимый baseline, а не как финальная оценка качества на реальных ученических решениях.
+Для отдельной задачи классификации `error_type` текущий baseline даёт `accuracy=0.9506`, `macro-F1=0.9633` на group split. Подробности и ограничения описаны в `reports/error_analysis.md`.
+
+Ранний случайный split давал 1.000/1.000, но это было плохим сигналом: модель видела почти одинаковые шаблоны одной задачи в train и test. Поэтому текущая оценка считается только через group split по `problem_id`.
 
 ## Быстрый старт
 
@@ -128,7 +133,7 @@ cp .env.example .env
 Сгенерировать датасет, обучить baseline и запустить тесты:
 
 ```bash
-PYTHONPATH=src python -m math_solution_analyzer.dataset --n 800
+PYTHONPATH=src python -m math_solution_analyzer.dataset --n 2000
 PYTHONPATH=src python -m math_solution_analyzer.models.train
 PYTHONPATH=src python -m math_solution_analyzer.evaluation
 PYTHONPATH=src pytest
@@ -138,6 +143,12 @@ PYTHONPATH=src pytest
 
 ```bash
 PYTHONPATH=src streamlit run app.py
+```
+
+CLI-проверка решения:
+
+```bash
+math-checker check --problem examples/inputs/arithmetic_error.md --solution examples/inputs/arithmetic_error.md --no-llm
 ```
 
 Для опционального LLM-объяснения укажите:
@@ -164,11 +175,14 @@ export OPENAI_MODEL="gpt-4.1-mini"
 │   └── train_baseline.ipynb
 ├── reports
 │   ├── metrics.json
+│   ├── evaluation.json
+│   ├── error_analysis.md
 │   └── confusion_matrix.png
 ├── src/math_solution_analyzer
 │   ├── dataset.py
 │   ├── evaluation.py
 │   ├── features.py
+│   ├── cli.py
 │   ├── checker.py
 │   ├── parser.py
 │   ├── pipeline.py

@@ -35,8 +35,8 @@ class StepChecker(Protocol):
         ...
 
 
-class HeuristicStepChecker:
-    """Deterministic fallback that catches obvious MVP-level issues without an API key."""
+class HybridChecker:
+    """Rule-based checker plus optional ML classifier signal."""
 
     def __init__(self, use_ml: bool = True) -> None:
         self.ml_classifier = load_default_classifier() if use_ml and load_default_classifier else None
@@ -171,7 +171,7 @@ class LLMStepChecker:
             feedback = result if isinstance(result, StepFeedback) else StepFeedback.model_validate(result)
             return StepAnalysis(step=current_step, **feedback.model_dump())
         except (ValidationError, Exception) as exc:
-            fallback = HeuristicStepChecker().check_step(
+            fallback = HybridChecker().check_step(
                 problem=problem,
                 previous_steps=previous_steps,
                 current_step=current_step,
@@ -191,7 +191,17 @@ class LLMStepChecker:
 def build_checker(use_llm: bool = True) -> StepChecker:
     if use_llm and os.getenv("OPENAI_API_KEY"):
         return LLMStepChecker()
-    return HeuristicStepChecker()
+    return HybridChecker()
+
+
+class RuleBasedChecker(HybridChecker):
+    """Rule-only baseline without the ML classifier."""
+
+    def __init__(self) -> None:
+        super().__init__(use_ml=False)
+
+
+HeuristicStepChecker = HybridChecker
 
 
 def _calculate(left: str, op: str, right: str) -> float | None:

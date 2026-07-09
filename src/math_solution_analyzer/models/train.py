@@ -6,11 +6,12 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
+from sklearn.base import clone
 from sklearn.compose import ColumnTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, f1_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -20,19 +21,19 @@ from math_solution_analyzer.features import extract_step_features, make_model_te
 def train_baseline(dataset_path: Path, model_path: Path, metrics_path: Path, test_size: float = 0.25, seed: int = 42) -> dict:
     df = pd.read_csv(dataset_path)
     X = _build_features_frame(df)
-    y = df["label"].astype(str)
+    y_label = df["label"].astype(str)
+    y_error_type = df["error_type"].astype(str)
+    groups = df["problem_id"].astype(str)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=test_size,
-        random_state=seed,
-        stratify=y,
-    )
+    splitter = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
+    train_idx, test_idx = next(splitter.split(X, y_label, groups=groups))
+    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+    y_label_train, y_label_test = y_label.iloc[train_idx], y_label.iloc[test_idx]
+    y_error_train, y_error_test = y_error_type.iloc[train_idx], y_error_type.iloc[test_idx]
 
     numeric_features = [col for col in X.columns if col != "model_text"]
 
-    pipeline = Pipeline(
+    base_pipeline = Pipeline(
         steps=[
             (
                 "preprocess",
@@ -47,21 +48,42 @@ def train_baseline(dataset_path: Path, model_path: Path, metrics_path: Path, tes
             ("clf", LogisticRegression(max_iter=1000, class_weight="balanced")),
         ]
     )
-    pipeline.fit(X_train, y_train)
-    predictions = pipeline.predict(X_test)
+    label_model = clone(base_pipeline)
+    error_type_model = clone(base_pipeline)
+    label_model.fit(X_train, y_label_train)
+    error_type_model.fit(X_train, y_error_train)
+
+    label_predictions = label_model.predict(X_test)
+    error_predictions = error_type_model.predict(X_test)
 
     metrics = {
         "model": "TF-IDF + numeric features + LogisticRegression",
+        "split": "GroupShuffleSplit by problem_id",
         "rows": int(len(df)),
+        "train_rows": int(len(train_idx)),
+        "test_rows": int(len(test_idx)),
+        "train_groups": int(groups.iloc[train_idx].nunique()),
+        "test_groups": int(groups.iloc[test_idx].nunique()),
         "test_size": test_size,
-        "accuracy": round(float(accuracy_score(y_test, predictions)), 4),
-        "macro_f1": round(float(f1_score(y_test, predictions, average="macro")), 4),
-        "classification_report": classification_report(y_test, predictions, output_dict=True, zero_division=0),
+        "label_accuracy": round(float(accuracy_score(y_label_test, label_predictions)), 4),
+        "label_macro_f1": round(float(f1_score(y_label_test, label_predictions, average="macro")), 4),
+        "error_type_accuracy": round(float(accuracy_score(y_error_test, error_predictions)), 4),
+        "error_type_macro_f1": round(float(f1_score(y_error_test, error_predictions, average="macro")), 4),
+        "label_classification_report": classification_report(y_label_test, label_predictions, output_dict=True, zero_division=0),
+        "error_type_classification_report": classification_report(y_error_test, error_predictions, output_dict=True, zero_division=0),
     }
 
     model_path.parent.mkdir(parents=True, exist_ok=True)
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(pipeline, model_path)
+    joblib.dump(
+        {
+            "label_model": label_model,
+            "error_type_model": error_type_model,
+            "split": metrics["split"],
+            "numeric_features": numeric_features,
+        },
+        model_path,
+    )
     metrics_path.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     return metrics
 
@@ -90,7 +112,8 @@ def main() -> None:
     parser.add_argument("--metrics", type=Path, default=Path("reports/metrics.json"))
     args = parser.parse_args()
     metrics = train_baseline(args.dataset, args.model, args.metrics)
-    print(json.dumps({k: v for k, v in metrics.items() if k != "classification_report"}, ensure_ascii=False, indent=2))
+    compact = {k: v for k, v in metrics.items() if not k.endswith("_classification_report")}
+    print(json.dumps(compact, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

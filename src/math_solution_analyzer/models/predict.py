@@ -15,7 +15,13 @@ DEFAULT_MODEL_PATH = Path("models/tfidf_logreg.joblib")
 class StepMLClassifier:
     def __init__(self, model_path: Path = DEFAULT_MODEL_PATH) -> None:
         self.model_path = model_path
-        self.pipeline = joblib.load(model_path)
+        artifact = joblib.load(model_path)
+        if isinstance(artifact, dict):
+            self.label_model = artifact["label_model"]
+            self.error_type_model = artifact.get("error_type_model")
+        else:
+            self.label_model = artifact
+            self.error_type_model = None
 
     def predict(
         self,
@@ -33,14 +39,19 @@ class StepMLClassifier:
         )
         feature_row["model_text"] = make_model_text(problem, previous_steps, current_step)
         frame = pd.DataFrame([feature_row])
-        label = str(self.pipeline.predict(frame)[0])
+        label = str(self.label_model.predict(frame)[0])
         confidence = 0.0
-        if hasattr(self.pipeline, "predict_proba"):
-            probabilities = self.pipeline.predict_proba(frame)[0]
+        if hasattr(self.label_model, "predict_proba"):
+            probabilities = self.label_model.predict_proba(frame)[0]
             confidence = float(max(probabilities))
+        error_type = "none"
+        if self.error_type_model is not None:
+            error_type = str(self.error_type_model.predict(frame)[0])
+        else:
+            error_type = _guess_error_type(problem, current_step, label)
         return MLStepPrediction(
             label=StepStatus(label),
-            error_type=_guess_error_type(problem, current_step, label),
+            error_type=error_type,
             confidence=round(confidence, 4),
             model_name=self.model_path.name,
         )
