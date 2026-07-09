@@ -22,8 +22,10 @@ def evaluate(
     *,
     split_eval: bool = True,
     threshold: float = 0.5,
+    first_error_strategy: str = "hybrid",
     predictions_path: Path | None = None,
 ) -> dict:
+    _validate_first_error_strategy(first_error_strategy)
     df = pd.read_csv(dataset_path)
     X = _build_features_frame(df)
     y_label = df["label"].astype(str)
@@ -52,14 +54,14 @@ def evaluate(
     label_probabilities = _predict_label_probabilities(label_model, X_test)
     rule_predictions = [_rule_label_prediction(row) for _, row in df_test.iterrows()]
     prediction_rows = _build_prediction_rows(df_test, label_predictions, error_predictions, label_probabilities)
-    first_error_metrics = _first_error_metrics(df_test, prediction_rows, threshold=threshold)
+    first_error_metrics = _first_error_metrics(df_test, prediction_rows, threshold=threshold, strategy=first_error_strategy)
 
     metrics = {
         "split": split_name,
         "test_rows": int(len(test_idx)),
         "test_groups": int(groups.iloc[test_idx].nunique()),
         "eval_sources": _source_counts(source_test),
-        "metrics_by_source": _metrics_by_source(df_test, prediction_rows, threshold=threshold),
+        "metrics_by_source": _metrics_by_source(df_test, prediction_rows, threshold=threshold, strategy=first_error_strategy),
         "rule_based": {
             "label_accuracy": round(float(accuracy_score(y_label_test, rule_predictions)), 4),
             "label_macro_f1": round(float(f1_score(y_label_test, rule_predictions, average="macro")), 4),
@@ -73,6 +75,7 @@ def evaluate(
             "first_error_macro_f1": first_error_metrics["first_error_macro_f1"],
             "all_correct_accuracy": first_error_metrics["all_correct_accuracy"],
             "first_error_threshold": threshold,
+            "first_error_strategy": first_error_strategy,
             "error_type_accuracy": round(float(accuracy_score(y_error_test, error_predictions)), 4),
             "error_type_macro_f1": round(float(f1_score(y_error_test, error_predictions, average="macro")), 4),
             "label_report": classification_report(y_label_test, label_predictions, output_dict=True, zero_division=0),
@@ -131,7 +134,7 @@ def _build_prediction_rows(
     return rows
 
 
-def _first_error_metrics(df_test: pd.DataFrame, prediction_rows: list[dict], *, threshold: float) -> dict[str, float | None]:
+def _first_error_metrics(df_test: pd.DataFrame, prediction_rows: list[dict], *, threshold: float, strategy: str) -> dict[str, float | str | None]:
     true_by_problem = _first_error_by_problem(
         [
             {
@@ -143,12 +146,12 @@ def _first_error_metrics(df_test: pd.DataFrame, prediction_rows: list[dict], *, 
         ],
         label_key="label",
     )
-    pred_by_problem = _predicted_first_error_by_problem(prediction_rows, threshold=threshold)
+    pred_by_problem = _predicted_first_error_by_problem(prediction_rows, threshold=threshold, strategy=strategy)
     problem_ids = sorted(true_by_problem)
     y_true = [true_by_problem[problem_id] for problem_id in problem_ids]
     y_pred = [pred_by_problem.get(problem_id, -1) for problem_id in problem_ids]
     all_correct_positions = [index for index, value in enumerate(y_true) if value == -1]
-    all_correct_accuracy = None
+    all_correct_accuracy: float | str = "not_applicable"
     if all_correct_positions:
         all_correct_accuracy = round(
             sum(1 for index in all_correct_positions if y_pred[index] == -1) / len(all_correct_positions),
@@ -171,24 +174,38 @@ def _first_error_by_problem(rows: list[dict], *, label_key: str) -> dict[str, in
     return result
 
 
-def _predicted_first_error_by_problem(prediction_rows: list[dict], *, threshold: float) -> dict[str, int]:
+def _predicted_first_error_by_problem(prediction_rows: list[dict], *, threshold: float, strategy: str) -> dict[str, int]:
+    _validate_first_error_strategy(strategy)
     result: dict[str, int] = {}
     for row in sorted(prediction_rows, key=lambda item: (item["problem_id"], item["step_index"])):
         problem_id = row["problem_id"]
         result.setdefault(problem_id, -1)
         if result[problem_id] != -1:
             continue
-        if row["p_incorrect"] >= threshold or row["predicted_label"] == "incorrect":
+        if _is_predicted_error_step(row, threshold=threshold, strategy=strategy):
             result[problem_id] = int(row["step_index"])
     return result
 
 
-def _metrics_by_source(df_test: pd.DataFrame, prediction_rows: list[dict], *, threshold: float) -> dict[str, dict]:
+def _is_predicted_error_step(row: dict, *, threshold: float, strategy: str) -> bool:
+    if strategy == "threshold":
+        return row["p_incorrect"] >= threshold
+    if strategy == "hard_label":
+        return row["predicted_label"] == "incorrect"
+    return row["p_incorrect"] >= threshold or row["predicted_label"] == "incorrect"
+
+
+def _validate_first_error_strategy(strategy: str) -> None:
+    if strategy not in {"threshold", "hard_label", "hybrid"}:
+        raise ValueError("first_error_strategy must be one of: threshold, hard_label, hybrid")
+
+
+def _metrics_by_source(df_test: pd.DataFrame, prediction_rows: list[dict], *, threshold: float, strategy: str) -> dict[str, dict]:
     predictions = pd.DataFrame(prediction_rows)
     metrics: dict[str, dict] = {}
     for source, source_df in df_test.groupby(df_test["source"] if "source" in df_test.columns else pd.Series(["unknown"] * len(df_test), index=df_test.index)):
         source_predictions = predictions[predictions["source"] == str(source)]
-        source_first_error = _first_error_metrics(source_df, source_predictions.to_dict("records"), threshold=threshold)
+        source_first_error = _first_error_metrics(source_df, source_predictions.to_dict("records"), threshold=threshold, strategy=strategy)
         metrics[str(source)] = {
             "rows": int(len(source_df)),
             "problems": int(source_df["problem_id"].nunique()),
@@ -247,6 +264,7 @@ def main() -> None:
     parser.add_argument("--confusion-matrix", type=Path, default=Path("reports/confusion_matrix.png"))
     parser.add_argument("--predictions", type=Path, default=None)
     parser.add_argument("--first-error-threshold", type=float, default=0.5)
+    parser.add_argument("--first-error-strategy", choices=["threshold", "hard_label", "hybrid"], default="hybrid")
     args = parser.parse_args()
     dataset_path = args.eval_dataset or args.dataset or Path("data/processed/step_classification.csv")
     print(
@@ -258,6 +276,7 @@ def main() -> None:
                 args.confusion_matrix,
                 split_eval=args.eval_dataset is None,
                 threshold=args.first_error_threshold,
+                first_error_strategy=args.first_error_strategy,
                 predictions_path=args.predictions,
             ),
             ensure_ascii=False,

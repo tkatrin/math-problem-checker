@@ -15,10 +15,12 @@ def run_experiment(
     model_path: Path,
     train_metrics_path: Path,
     eval_metrics_path: Path,
+    combined_report_path: Path,
     confusion_matrix_path: Path,
     predictions_path: Path,
     error_analysis_path: Path,
     threshold: float = 0.5,
+    first_error_strategy: str = "hybrid",
 ) -> dict:
     train_metrics = train_baseline(train_dataset, model_path, train_metrics_path)
     eval_metrics = evaluate(
@@ -28,6 +30,7 @@ def run_experiment(
         confusion_matrix_path,
         split_eval=False,
         threshold=threshold,
+        first_error_strategy=first_error_strategy,
         predictions_path=predictions_path,
     )
     combined = {
@@ -35,6 +38,8 @@ def run_experiment(
         "train_dataset": str(train_dataset),
         "eval_dataset": str(eval_dataset),
         "model_path": str(model_path),
+        "first_error_strategy": first_error_strategy,
+        "first_error_threshold": threshold,
         "train_metrics": {
             "train_sources": train_metrics.get("train_sources", {}),
             "label_macro_f1": train_metrics.get("label_macro_f1"),
@@ -42,12 +47,13 @@ def run_experiment(
         },
         "eval_metrics": eval_metrics,
     }
-    eval_metrics_path.write_text(json.dumps(combined, ensure_ascii=False, indent=2), encoding="utf-8")
-    _write_error_analysis(combined, error_analysis_path)
+    combined_report_path.parent.mkdir(parents=True, exist_ok=True)
+    combined_report_path.write_text(json.dumps(combined, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_error_analysis(combined, predictions_path, error_analysis_path)
     return combined
 
 
-def _write_error_analysis(result: dict, output: Path) -> None:
+def _write_error_analysis(result: dict, predictions_path: Path, output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     eval_metrics = result["eval_metrics"]
     tfidf = eval_metrics.get("tfidf_logreg", {})
@@ -65,6 +71,8 @@ def _write_error_analysis(result: dict, output: Path) -> None:
         f"- First-error accuracy: `{tfidf.get('first_error_accuracy')}`",
         f"- First-error macro-F1: `{tfidf.get('first_error_macro_f1')}`",
         f"- All-correct accuracy: `{tfidf.get('all_correct_accuracy')}`",
+        f"- First-error strategy: `{result.get('first_error_strategy')}`",
+        f"- First-error threshold: `{result.get('first_error_threshold')}`",
         "",
         "## Metrics By Source",
         "",
@@ -81,18 +89,55 @@ def _write_error_analysis(result: dict, output: Path) -> None:
                 "",
             ]
         )
+    false_positives, false_negatives = _sample_prediction_errors(predictions_path)
+    lines.extend(["## False Positive Examples", ""])
+    lines.extend(_format_examples(false_positives))
+    lines.extend(["", "## False Negative Examples", ""])
+    lines.extend(_format_examples(false_negatives))
     lines.extend(
         [
+            "",
             "## Notes",
             "",
             "Inspect `reports/prm800k_to_processbench_predictions.json` for per-step probabilities:",
             "`p_correct`, `p_incorrect`, and `p_suspicious`.",
             "",
-            "Recommended manual follow-up: sample false positives and false negatives by comparing",
-            "`true_label`, `predicted_label`, and `p_incorrect` around the first-error threshold.",
+            "`all_correct_accuracy` is `not_applicable` when the eval subset has no all-correct solutions.",
         ]
     )
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _sample_prediction_errors(predictions_path: Path, limit: int = 5) -> tuple[list[dict], list[dict]]:
+    if not predictions_path.exists():
+        return [], []
+    rows = json.loads(predictions_path.read_text(encoding="utf-8"))
+    false_positives = [
+        row
+        for row in rows
+        if row.get("true_label") != "incorrect" and row.get("predicted_label") == "incorrect"
+    ][:limit]
+    false_negatives = [
+        row
+        for row in rows
+        if row.get("true_label") == "incorrect" and row.get("predicted_label") != "incorrect"
+    ][:limit]
+    return false_positives, false_negatives
+
+
+def _format_examples(examples: list[dict]) -> list[str]:
+    if not examples:
+        return ["No examples found."]
+    lines: list[str] = []
+    for row in examples:
+        lines.extend(
+            [
+                f"- problem_id=`{row.get('problem_id')}`, step=`{row.get('step_index')}`, "
+                f"true=`{row.get('true_label')}`, pred=`{row.get('predicted_label')}`, "
+                f"p_incorrect=`{row.get('p_incorrect')}`",
+            ]
+        )
+    return lines
 
 
 def main() -> None:
@@ -102,10 +147,12 @@ def main() -> None:
     parser.add_argument("--model", type=Path, default=Path("models/prm800k_tfidf_logreg.joblib"))
     parser.add_argument("--train-metrics", type=Path, default=Path("reports/prm800k_train_metrics.json"))
     parser.add_argument("--metrics", type=Path, default=Path("reports/prm800k_to_processbench_metrics.json"))
+    parser.add_argument("--combined-report", type=Path, default=Path("reports/prm800k_to_processbench_report.json"))
     parser.add_argument("--confusion-matrix", type=Path, default=Path("reports/prm800k_to_processbench_confusion_matrix.png"))
     parser.add_argument("--predictions", type=Path, default=Path("reports/prm800k_to_processbench_predictions.json"))
     parser.add_argument("--error-analysis", type=Path, default=Path("reports/prm800k_to_processbench_error_analysis.md"))
     parser.add_argument("--first-error-threshold", type=float, default=0.5)
+    parser.add_argument("--first-error-strategy", choices=["threshold", "hard_label", "hybrid"], default="hybrid")
     args = parser.parse_args()
 
     result = run_experiment(
@@ -114,10 +161,12 @@ def main() -> None:
         model_path=args.model,
         train_metrics_path=args.train_metrics,
         eval_metrics_path=args.metrics,
+        combined_report_path=args.combined_report,
         confusion_matrix_path=args.confusion_matrix,
         predictions_path=args.predictions,
         error_analysis_path=args.error_analysis,
         threshold=args.first_error_threshold,
+        first_error_strategy=args.first_error_strategy,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

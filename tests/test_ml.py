@@ -218,11 +218,13 @@ def test_external_eval_saves_first_error_metrics_and_probabilities(tmp_path: Pat
         eval_metrics_path,
         confusion_path,
         split_eval=False,
+        first_error_strategy="threshold",
         predictions_path=predictions_path,
     )
     assert metrics["split"] == "external eval dataset"
     assert metrics["eval_sources"]["processbench"] == len(eval_rows)
     assert "first_error_accuracy" in metrics["tfidf_logreg"]
+    assert metrics["tfidf_logreg"]["first_error_strategy"] == "threshold"
     assert "processbench" in metrics["metrics_by_source"]
     predictions = json.loads(predictions_path.read_text(encoding="utf-8"))
     assert predictions
@@ -238,6 +240,7 @@ def test_prm800k_to_processbench_experiment_writes_outputs(tmp_path: Path) -> No
     confusion_path = tmp_path / "confusion.png"
     predictions_path = tmp_path / "predictions.json"
     error_analysis_path = tmp_path / "error_analysis.md"
+    combined_report_path = tmp_path / "combined.json"
 
     save_dataset(build_synthetic_dataset(n=500, seed=23), train_path)
     write_rows_csv(
@@ -258,12 +261,16 @@ def test_prm800k_to_processbench_experiment_writes_outputs(tmp_path: Path) -> No
         model_path=model_path,
         train_metrics_path=train_metrics_path,
         eval_metrics_path=eval_metrics_path,
+        combined_report_path=combined_report_path,
         confusion_matrix_path=confusion_path,
         predictions_path=predictions_path,
         error_analysis_path=error_analysis_path,
+        first_error_strategy="hard_label",
     )
     assert result["experiment"] == "prm800k_to_processbench"
     assert model_path.exists()
     assert eval_metrics_path.exists()
+    assert combined_report_path.exists()
     assert predictions_path.exists()
     assert error_analysis_path.exists()
+    assert "False Positive Examples" in error_analysis_path.read_text(encoding="utf-8")

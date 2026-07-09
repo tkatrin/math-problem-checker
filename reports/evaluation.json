@@ -28,6 +28,7 @@
     "first_error_macro_f1": 1.0,
     "all_correct_accuracy": 1.0,
     "first_error_threshold": 0.5,
+    "first_error_strategy": "hybrid",
     "error_type_accuracy": 0.9506,
     "error_type_macro_f1": 0.9633,
     "label_report": {

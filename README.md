@@ -144,16 +144,18 @@ PYTHONPATH=src python -m math_solution_analyzer.evaluation \
   --eval-dataset data/processed/processbench_steps.csv \
   --metrics reports/prm800k_to_processbench_metrics.json \
   --confusion-matrix reports/prm800k_to_processbench_confusion_matrix.png \
-  --predictions reports/prm800k_to_processbench_predictions.json
+  --predictions reports/prm800k_to_processbench_predictions.json \
+  --first-error-strategy hybrid
 ```
 
 То же самое одной командой:
 
 ```bash
-PYTHONPATH=src python -m math_solution_analyzer.experiments.prm800k_to_processbench
+PYTHONPATH=src python -m math_solution_analyzer.experiments.prm800k_to_processbench \
+  --combined-report reports/prm800k_to_processbench_report.json
 ```
 
-Experiment runner also writes `reports/prm800k_to_processbench_error_analysis.md`.
+Experiment runner also writes `reports/prm800k_to_processbench_error_analysis.md` with false-positive and false-negative examples sampled from predictions.
 
 ## Метрики
 
@@ -167,7 +169,7 @@ Experiment runner also writes `reports/prm800k_to_processbench_error_analysis.md
 | Embeddings + LogReg | PRM800K subset | ProcessBench | planned | planned |
 | Transformer fine-tuning | PRM800K | ProcessBench | planned | planned |
 
-Для отдельной задачи классификации `error_type` текущий toy baseline даёт `accuracy=0.9506`, `macro-F1=0.9633` на group split. Для ProcessBench дополнительно считаются `first_error_accuracy`, `first_error_macro_f1`, `all_correct_accuracy` и сохраняются probability scores по шагам: `p_correct`, `p_incorrect`, `p_suspicious`.
+Для отдельной задачи классификации `error_type` текущий toy baseline даёт `accuracy=0.9506`, `macro-F1=0.9633` на group split. Для ProcessBench дополнительно считаются `first_error_accuracy`, `first_error_macro_f1`, `all_correct_accuracy` и сохраняются probability scores по шагам: `p_correct`, `p_incorrect`, `p_suspicious`. First-error агрегация поддерживает стратегии `threshold`, `hard_label`, `hybrid`; `all_correct_accuracy` получает значение `not_applicable`, если в eval subset нет all-correct задач.
 
 Ранний случайный split давал 1.000/1.000, но это было плохим сигналом: модель видела почти одинаковые шаблоны одной задачи в train и test. Поэтому текущая оценка считается только через group split по `problem_id`.
 

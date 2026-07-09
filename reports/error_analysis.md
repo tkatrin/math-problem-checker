@@ -13,6 +13,8 @@
 
 Toy first-error accuracy is currently 1.0000, but this should not be treated as a strong result: the synthetic generator makes the first wrong step comparatively easy to identify. The meaningful version of this metric is the cross-dataset PRM800K -> ProcessBench experiment.
 
+First-error aggregation supports three strategies: `threshold`, `hard_label`, and `hybrid`. If an eval subset contains no all-correct solutions, `all_correct_accuracy` is reported as `not_applicable`.
+
 ## Где модель ошибается
 
 На текущем synthetic benchmark основная путаница возникает между:
