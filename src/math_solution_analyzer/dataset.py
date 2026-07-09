@@ -61,6 +61,7 @@ def save_dataset(rows: list[dict[str, str | int]], output: Path) -> None:
         "label",
         "error_type",
         "explanation",
+        "source",
     ]
     with output.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -80,6 +81,7 @@ def _row(
     label: str,
     error_type: str,
     explanation: str,
+    source: str = "toy_synthetic_baseline",
 ) -> dict[str, str | int]:
     return {
         "problem_id": problem_id,
@@ -92,6 +94,7 @@ def _row(
         "label": label,
         "error_type": error_type,
         "explanation": explanation,
+        "source": source,
     }
 
 

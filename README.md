@@ -40,9 +40,9 @@ Parser -> Step Splitter -> Feature Extractor -> SymPy Checker -> ML Classifier -
 }
 ```
 
-## Датасет
+## Данные
 
-В проекте есть воспроизводимый синтетический датасет для baseline-экспериментов. Он содержит несколько доменов: арифметика, линейные и квадратные уравнения, системы, производные, интегралы, пределы, матрицы, комбинаторика и вероятность.
+Синтетический датасет в этом репозитории используется только как `toy_synthetic_baseline`: для smoke-тестов, демонстрации пайплайна и воспроизводимого baseline без скачивания внешних данных. Он не заявляется как основной источник качества модели.
 
 ```bash
 PYTHONPATH=src python -m math_solution_analyzer.dataset --n 2000 --output data/processed/step_classification.csv
@@ -59,20 +59,46 @@ PYTHONPATH=src python -m math_solution_analyzer.dataset --n 2000 --output data/p
   "step_index": 2,
   "label": "incorrect",
   "error_type": "calculation_error",
+  "source": "toy_synthetic_baseline",
   "explanation": "..."
 }
 ```
 
-Покрытые типы ошибок:
+Основная ML-линия проекта рассчитана на public step-level math reasoning datasets:
 
-- `calculation_error`;
-- `sign_error`;
-- `wrong_formula`;
-- `missing_condition`;
-- `invalid_transition`;
-- `wrong_substitution`;
-- `wrong_final_answer`;
-- `probability_without_replacement`.
+- PRM800K: около 800k human step-level correctness labels для MATH-решений, выпущен к работе “Let's Verify Step by Step”.
+- ProcessBench: benchmark на поиск первого ошибочного шага в математическом reasoning; около 3400 expert-labeled cases.
+- Math-Shepherd: автоматически построенная process-supervision разметка для step-by-step verification.
+
+Адаптеры лежат в `src/math_solution_analyzer/data_sources`.
+
+### PRM800K
+
+PRM800K хранит JSONL, где одна строка соответствует полной размеченной траектории, а внутри `label.steps[*].completions[*].rating` принимает значения `-1`, `0`, `+1`. Конвертация в схему проекта:
+
+```bash
+PYTHONPATH=src python -m math_solution_analyzer.data_sources.prm800k \
+  --input data/raw/prm800k/phase2_train.jsonl \
+  --output data/processed/prm800k_steps.csv
+```
+
+Маппинг:
+
+- `+1` -> `label=correct`, `error_type=none`;
+- `0` -> `label=suspicious`, `error_type=no_progress`;
+- `-1` -> `label=incorrect`, `error_type=process_error`.
+
+### ProcessBench
+
+ProcessBench содержит `problem`, список `steps` и `label` — индекс первого ошибочного шага или all-correct marker. Конвертация локального JSONL-экспорта:
+
+```bash
+PYTHONPATH=src python -m math_solution_analyzer.data_sources.processbench \
+  --input data/raw/processbench/gsm8k.jsonl \
+  --output data/processed/processbench_steps.csv
+```
+
+Шаги до первой ошибки получают `correct`, первый ошибочный шаг — `incorrect/process_error`, шаги после первой ошибки — `suspicious/after_error_context`.
 
 ## Baseline
 
@@ -130,7 +156,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Сгенерировать датасет, обучить baseline и запустить тесты:
+Сгенерировать toy dataset, обучить baseline и запустить тесты:
 
 ```bash
 PYTHONPATH=src python -m math_solution_analyzer.dataset --n 2000
@@ -188,6 +214,10 @@ export OPENAI_MODEL="gpt-4.1-mini"
 │   └── confusion_matrix.png
 ├── src/math_solution_analyzer
 │   ├── dataset.py
+│   ├── data_sources
+│   │   ├── prm800k.py
+│   │   ├── processbench.py
+│   │   └── math_shepherd.py
 │   ├── evaluation.py
 │   ├── features.py
 │   ├── cli.py
@@ -215,8 +245,8 @@ export OPENAI_MODEL="gpt-4.1-mini"
 
 ## Формулировка для резюме
 
-Разработала ML-систему для пошаговой классификации математических решений: собрала и разметила синтетический датасет ошибочных и корректных шагов, реализовала feature extraction с SymPy-признаками, обучила baseline-модель TF-IDF + Logistic Regression, сравнила качество по accuracy/macro-F1/step-level F1 и интегрировала классификатор в Streamlit-приложение.
+Разработала ML-систему для пошаговой классификации математических решений: подготовила единую схему для step-level датасетов, добавила адаптеры для PRM800K и ProcessBench, реализовала feature extraction с SymPy-признаками, обучила baseline-модель TF-IDF + Logistic Regression, сравнила качество по accuracy/macro-F1/step-level F1 и интегрировала классификатор в Streamlit-приложение.
 
 ## Ограничения
 
-Текущий датасет синтетический и нужен для воспроизводимого pet-project baseline. Для production-качества его нужно расширить реальными школьными и вузовскими решениями, добавить ручную валидацию разметки и обучить transformer-based classifier.
+Текущий `data/processed/step_classification.csv` остаётся toy/smoke датасетом. Для сильной оценки качества нужно обучаться на PRM800K, а оценивать перенос на ProcessBench или отдельном holdout из реальных решений. Synthetic данные не следует использовать как основное доказательство качества модели.
