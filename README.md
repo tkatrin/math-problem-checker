@@ -151,6 +151,8 @@ CLI-проверка решения:
 PYTHONPATH=src python -m math_solution_analyzer.cli check \
   --problem examples/cli/problem.txt \
   --solution examples/cli/solution.txt \
+  --model models/tfidf_logreg.joblib \
+  --output reports/demo_cli_output.json \
   --no-llm
 ```
 
@@ -162,6 +164,7 @@ export OPENAI_MODEL="gpt-4.1-mini"
 ```
 
 После этого можно убрать `--no-llm`: классификация всё равно выполняется rule/ML слоями, а OpenAI API используется только для короткого человеческого объяснения найденных сигналов.
+Если OpenAI недоступен, отчёт всё равно строится, а в `metadata.llm_warning` появляется предупреждение. Для rule-only режима используйте `--no-ml`.
 
 ## Структура проекта
 

@@ -33,6 +33,9 @@ if st.button("Проверить решение", type="primary"):
     except Exception as exc:
         st.error(f"Не удалось выполнить анализ: {exc}")
     else:
+        if report.metadata.get("llm_warning"):
+            st.warning(str(report.metadata["llm_warning"]))
+
         st.subheader("Итог")
         st.write(report.summary)
 

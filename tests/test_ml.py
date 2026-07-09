@@ -105,3 +105,34 @@ def test_cli_check_outputs_json(tmp_path: Path) -> None:
     payload = json.loads(result.stdout)
     assert payload["metadata"]["step_count"] == 2
     assert payload["steps"][1]["ml_prediction"]["error_type"]
+
+
+def test_cli_supports_output_and_no_ml(tmp_path: Path) -> None:
+    problem_path = tmp_path / "problem.txt"
+    solution_path = tmp_path / "solution.txt"
+    output_path = tmp_path / "report.json"
+    problem_path.write_text("Вычислите 2 + 2.", encoding="utf-8")
+    solution_path.write_text("1. Складываем числа.\n2. 2 + 2 = 5.", encoding="utf-8")
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "math_solution_analyzer.cli",
+            "check",
+            "--problem",
+            str(problem_path),
+            "--solution",
+            str(solution_path),
+            "--output",
+            str(output_path),
+            "--no-ml",
+            "--no-llm",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["metadata"]["ml_enabled"] is False
+    assert payload["steps"][1]["ml_prediction"] is None

@@ -24,6 +24,12 @@ def test_step_splitter_uses_numbered_steps() -> None:
     assert steps[0].text == "Пусть x=1."
 
 
+def test_step_splitter_keeps_single_numbered_step() -> None:
+    steps = split_solution_into_steps("1. Найдите сумму чисел: 2 + 2 = 4.")
+    assert len(steps) == 1
+    assert steps[0].text == "Найдите сумму чисел: 2 + 2 = 4."
+
+
 def test_pipeline_catches_arithmetic_error_without_llm() -> None:
     report = analyze_solution(
         "Вычислите 2 + 2.",
@@ -68,3 +74,16 @@ def test_pipeline_skips_llm_explanation_generator_when_disabled() -> None:
     )
     assert generator.calls == 0
     assert report.steps[0].llm_explanation is None
+
+
+def test_pipeline_skips_llm_for_correct_steps() -> None:
+    generator = FakeExplanationGenerator()
+    report = analyze_solution(
+        "Найдите сумму чисел 2 и 2.",
+        "1. Найдите сумму чисел: 2 + 2 = 4.",
+        use_llm=True,
+        use_ml=False,
+        explanation_generator=generator,
+    )
+    assert generator.calls == 0
+    assert all(step.llm_explanation is None for step in report.steps)

@@ -49,8 +49,13 @@ def _split_by_connectors(solution: str) -> list[str]:
 
 
 def split_solution_into_steps(solution: str) -> list[SolutionStep]:
+    has_explicit_marker = any(
+        STEP_MARKER_RE.match(line.strip())
+        for line in solution.splitlines()
+        if line.strip()
+    )
     chunks = _split_by_markers(solution)
-    if len(chunks) <= 1:
+    if not has_explicit_marker and len(chunks) <= 1:
         chunks = _split_by_connectors(solution)
 
     return [SolutionStep(index=index, text=chunk) for index, chunk in enumerate(chunks, start=1)]
