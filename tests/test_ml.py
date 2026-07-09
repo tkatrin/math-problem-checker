@@ -1,8 +1,11 @@
 from pathlib import Path
+import json
+import subprocess
+import sys
 
 import pandas as pd
 
-from math_solution_analyzer.dataset import build_synthetic_dataset, save_dataset
+from math_solution_analyzer.dataset import ERROR_TYPES, build_synthetic_dataset, save_dataset
 from math_solution_analyzer.evaluation import evaluate
 from math_solution_analyzer.features import extract_step_features
 from math_solution_analyzer.models.predict import StepMLClassifier
@@ -30,6 +33,7 @@ def test_dataset_has_required_columns_and_classes(tmp_path: Path) -> None:
     }
     assert expected_columns.issubset(df.columns)
     assert {"correct", "incorrect", "incomplete", "suspicious"}.issubset(set(df["label"]))
+    assert set(ERROR_TYPES).issubset(set(df["error_type"]))
 
 
 def test_feature_extractor_returns_stable_features() -> None:
@@ -74,3 +78,30 @@ def test_train_predict_and_evaluate_save_artifacts(tmp_path: Path) -> None:
     assert confusion_path.exists()
     assert "rule_based" in evaluation
     assert "tfidf_logreg" in evaluation
+
+
+def test_cli_check_outputs_json(tmp_path: Path) -> None:
+    problem_path = tmp_path / "problem.txt"
+    solution_path = tmp_path / "solution.txt"
+    problem_path.write_text("Вычислите 2 + 2.", encoding="utf-8")
+    solution_path.write_text("1. Складываем числа.\n2. 2 + 2 = 5.", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "math_solution_analyzer.cli",
+            "check",
+            "--problem",
+            str(problem_path),
+            "--solution",
+            str(solution_path),
+            "--no-llm",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+    assert payload["metadata"]["step_count"] == 2
+    assert payload["steps"][1]["ml_prediction"]["error_type"]

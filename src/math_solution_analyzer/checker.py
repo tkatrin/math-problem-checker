@@ -9,11 +9,6 @@ from pydantic import ValidationError
 
 from .schema import Issue, Severity, SolutionStep, StepAnalysis, StepStatus
 
-try:
-    from .models.predict import load_default_classifier
-except Exception:  # pragma: no cover - ML dependencies can be absent in minimal installs
-    load_default_classifier = None
-
 
 class StepFeedback(BaseModel):
     status: StepStatus
@@ -35,11 +30,8 @@ class StepChecker(Protocol):
         ...
 
 
-class HybridChecker:
-    """Rule-based checker plus optional ML classifier signal."""
-
-    def __init__(self, use_ml: bool = True) -> None:
-        self.ml_classifier = load_default_classifier() if use_ml and load_default_classifier else None
+class RuleBasedChecker:
+    """Deterministic rule-based checker used as a non-ML baseline."""
 
     def check_step(
         self,
@@ -104,26 +96,6 @@ class HybridChecker:
         if issues and not fixes:
             fixes.append("Исправьте отмеченный переход и проверьте, не зависит ли от него следующий шаг.")
 
-        ml_prediction = None
-        if self.ml_classifier:
-            ml_prediction = self.ml_classifier.predict(
-                problem=problem,
-                previous_steps=[step.text for step in previous_steps],
-                current_step=current_step.text,
-                step_index=current_step.index,
-            )
-            if ml_prediction.label != StepStatus.CORRECT and status == StepStatus.CORRECT:
-                status = ml_prediction.label
-                issues.append(
-                    Issue(
-                        severity=Severity.WARNING,
-                        title="ML-модель пометила шаг как подозрительный",
-                        explanation=f"Baseline-классификатор предсказал {ml_prediction.label.value} / {ml_prediction.error_type}.",
-                        recommendation="Проверьте этот переход вручную или передайте его LLM-объяснителю.",
-                    )
-                )
-                fixes.append("Добавьте пояснение к шагу или перепроверьте формальный переход.")
-
         return StepAnalysis(
             step=current_step,
             status=status,
@@ -132,7 +104,6 @@ class HybridChecker:
             missing_steps=missing_steps,
             how_to_fix=fixes,
             confidence=0.45,
-            ml_prediction=ml_prediction,
         )
 
 
@@ -171,7 +142,7 @@ class LLMStepChecker:
             feedback = result if isinstance(result, StepFeedback) else StepFeedback.model_validate(result)
             return StepAnalysis(step=current_step, **feedback.model_dump())
         except (ValidationError, Exception) as exc:
-            fallback = HybridChecker().check_step(
+            fallback = RuleBasedChecker().check_step(
                 problem=problem,
                 previous_steps=previous_steps,
                 current_step=current_step,
@@ -191,17 +162,11 @@ class LLMStepChecker:
 def build_checker(use_llm: bool = True) -> StepChecker:
     if use_llm and os.getenv("OPENAI_API_KEY"):
         return LLMStepChecker()
-    return HybridChecker()
+    return RuleBasedChecker()
 
 
-class RuleBasedChecker(HybridChecker):
-    """Rule-only baseline without the ML classifier."""
-
-    def __init__(self) -> None:
-        super().__init__(use_ml=False)
-
-
-HeuristicStepChecker = HybridChecker
+HybridChecker = RuleBasedChecker
+HeuristicStepChecker = RuleBasedChecker
 
 
 def _calculate(left: str, op: str, right: str) -> float | None:
