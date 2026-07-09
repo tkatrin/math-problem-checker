@@ -24,6 +24,7 @@ def train_baseline(dataset_path: Path, model_path: Path, metrics_path: Path, tes
     y_label = df["label"].astype(str)
     y_error_type = df["error_type"].astype(str)
     groups = df["problem_id"].astype(str)
+    sources = df["source"].astype(str) if "source" in df.columns else pd.Series(["unknown"] * len(df))
 
     splitter = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
     train_idx, test_idx = next(splitter.split(X, y_label, groups=groups))
@@ -50,16 +51,24 @@ def train_baseline(dataset_path: Path, model_path: Path, metrics_path: Path, tes
     )
     label_model = clone(base_pipeline)
     error_type_model = clone(base_pipeline)
-    label_model.fit(X_train, y_label_train)
-    error_type_model.fit(X_train, y_error_train)
+    holdout_label_model = clone(base_pipeline)
+    holdout_error_type_model = clone(base_pipeline)
+    holdout_label_model.fit(X_train, y_label_train)
+    holdout_error_type_model.fit(X_train, y_error_train)
 
-    label_predictions = label_model.predict(X_test)
-    error_predictions = error_type_model.predict(X_test)
+    label_predictions = holdout_label_model.predict(X_test)
+    error_predictions = holdout_error_type_model.predict(X_test)
+
+    label_model.fit(X, y_label)
+    error_type_model.fit(X, y_error_type)
 
     metrics = {
         "model": "TF-IDF + numeric features + LogisticRegression",
         "split": "GroupShuffleSplit by problem_id",
         "rows": int(len(df)),
+        "train_sources": _source_counts(sources),
+        "holdout_train_sources": _source_counts(sources.iloc[train_idx]),
+        "holdout_eval_sources": _source_counts(sources.iloc[test_idx]),
         "train_rows": int(len(train_idx)),
         "test_rows": int(len(test_idx)),
         "train_groups": int(groups.iloc[train_idx].nunique()),
@@ -105,13 +114,19 @@ def _build_features_frame(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _source_counts(sources: pd.Series) -> dict[str, int]:
+    return {str(source): int(count) for source, count in sources.value_counts().sort_index().items()}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=Path, default=Path("data/processed/step_classification.csv"))
+    parser.add_argument("--dataset", type=Path, default=None, help="Dataset CSV path. Alias kept for toy/local training.")
+    parser.add_argument("--train-dataset", type=Path, default=None, help="Training dataset CSV path.")
     parser.add_argument("--model", type=Path, default=Path("models/tfidf_logreg.joblib"))
     parser.add_argument("--metrics", type=Path, default=Path("reports/metrics.json"))
     args = parser.parse_args()
-    metrics = train_baseline(args.dataset, args.model, args.metrics)
+    dataset_path = args.train_dataset or args.dataset or Path("data/processed/step_classification.csv")
+    metrics = train_baseline(dataset_path, args.model, args.metrics)
     compact = {k: v for k, v in metrics.items() if not k.endswith("_classification_report")}
     print(json.dumps(compact, ensure_ascii=False, indent=2))
 

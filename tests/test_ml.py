@@ -8,7 +8,9 @@ import pandas as pd
 from math_solution_analyzer.dataset import ERROR_TYPES, build_synthetic_dataset, save_dataset
 from math_solution_analyzer.data_sources.prm800k import normalize_prm800k_record
 from math_solution_analyzer.data_sources.processbench import normalize_processbench_record
+from math_solution_analyzer.data_sources.common import write_rows_csv
 from math_solution_analyzer.evaluation import evaluate
+from math_solution_analyzer.experiments.prm800k_to_processbench import run_experiment
 from math_solution_analyzer.features import extract_step_features
 from math_solution_analyzer.models.predict import StepMLClassifier
 from math_solution_analyzer.models.train import train_baseline
@@ -65,6 +67,7 @@ def test_train_predict_and_evaluate_save_artifacts(tmp_path: Path) -> None:
     assert model_path.exists()
     assert metrics_path.exists()
     assert metrics["split"] == "GroupShuffleSplit by problem_id"
+    assert metrics["train_sources"]["toy_synthetic_baseline"] == 500
     assert "error_type_macro_f1" in metrics
 
     classifier = StepMLClassifier(model_path)
@@ -82,6 +85,7 @@ def test_train_predict_and_evaluate_save_artifacts(tmp_path: Path) -> None:
     assert confusion_path.exists()
     assert "rule_based" in evaluation
     assert "tfidf_logreg" in evaluation
+    assert "metrics_by_source" in evaluation
 
 
 def test_cli_check_outputs_json(tmp_path: Path) -> None:
@@ -171,3 +175,95 @@ def test_processbench_adapter_marks_first_error() -> None:
     assert [row["label"] for row in rows] == ["correct", "incorrect", "suspicious"]
     assert rows[1]["error_type"] == "process_error"
     assert rows[2]["error_type"] == "after_error_context"
+
+
+def test_external_eval_saves_first_error_metrics_and_probabilities(tmp_path: Path) -> None:
+    train_path = tmp_path / "train.csv"
+    model_path = tmp_path / "model.joblib"
+    train_metrics_path = tmp_path / "train_metrics.json"
+    eval_path = tmp_path / "processbench.csv"
+    eval_metrics_path = tmp_path / "eval_metrics.json"
+    confusion_path = tmp_path / "confusion.png"
+    predictions_path = tmp_path / "predictions.json"
+
+    save_dataset(build_synthetic_dataset(n=500, seed=19), train_path)
+    train_baseline(train_path, model_path, train_metrics_path)
+
+    eval_rows = []
+    eval_rows.extend(
+        normalize_processbench_record(
+            {
+                "id": "case-1",
+                "problem": "Compute 2+2.",
+                "steps": ["Set up addition.", "2+2=5.", "Answer is 5."],
+                "label": 1,
+            }
+        )
+    )
+    eval_rows.extend(
+        normalize_processbench_record(
+            {
+                "id": "case-2",
+                "problem": "Compute 3+3.",
+                "steps": ["Set up addition.", "3+3=6.", "Answer is 6."],
+                "label": -1,
+            }
+        )
+    )
+    write_rows_csv(eval_rows, eval_path)
+
+    metrics = evaluate(
+        model_path,
+        eval_path,
+        eval_metrics_path,
+        confusion_path,
+        split_eval=False,
+        predictions_path=predictions_path,
+    )
+    assert metrics["split"] == "external eval dataset"
+    assert metrics["eval_sources"]["processbench"] == len(eval_rows)
+    assert "first_error_accuracy" in metrics["tfidf_logreg"]
+    assert "processbench" in metrics["metrics_by_source"]
+    predictions = json.loads(predictions_path.read_text(encoding="utf-8"))
+    assert predictions
+    assert {"p_correct", "p_incorrect", "p_suspicious"}.issubset(predictions[0])
+
+
+def test_prm800k_to_processbench_experiment_writes_outputs(tmp_path: Path) -> None:
+    train_path = tmp_path / "train.csv"
+    eval_path = tmp_path / "eval.csv"
+    model_path = tmp_path / "model.joblib"
+    train_metrics_path = tmp_path / "train_metrics.json"
+    eval_metrics_path = tmp_path / "eval_metrics.json"
+    confusion_path = tmp_path / "confusion.png"
+    predictions_path = tmp_path / "predictions.json"
+    error_analysis_path = tmp_path / "error_analysis.md"
+
+    save_dataset(build_synthetic_dataset(n=500, seed=23), train_path)
+    write_rows_csv(
+        normalize_processbench_record(
+            {
+                "id": "case-1",
+                "problem": "Compute 2+2.",
+                "steps": ["Set up addition.", "2+2=5.", "Answer is 5."],
+                "label": 1,
+            }
+        ),
+        eval_path,
+    )
+
+    result = run_experiment(
+        train_dataset=train_path,
+        eval_dataset=eval_path,
+        model_path=model_path,
+        train_metrics_path=train_metrics_path,
+        eval_metrics_path=eval_metrics_path,
+        confusion_matrix_path=confusion_path,
+        predictions_path=predictions_path,
+        error_analysis_path=error_analysis_path,
+    )
+    assert result["experiment"] == "prm800k_to_processbench"
+    assert model_path.exists()
+    assert eval_metrics_path.exists()
+    assert predictions_path.exists()
+    assert error_analysis_path.exists()

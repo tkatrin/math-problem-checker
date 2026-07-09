@@ -116,7 +116,7 @@ PYTHONPATH=src python -m math_solution_analyzer.data_sources.processbench \
 
 ```bash
 PYTHONPATH=src python -m math_solution_analyzer.models.train \
-  --dataset data/processed/step_classification.csv \
+  --train-dataset data/processed/step_classification.csv \
   --model models/tfidf_logreg.joblib \
   --metrics reports/metrics.json
 ```
@@ -131,21 +131,47 @@ PYTHONPATH=src python -m math_solution_analyzer.evaluation \
   --confusion-matrix reports/confusion_matrix.png
 ```
 
+Cross-dataset evaluation после конвертации публичных данных:
+
+```bash
+PYTHONPATH=src python -m math_solution_analyzer.models.train \
+  --train-dataset data/processed/prm800k_steps.csv \
+  --model models/prm800k_tfidf_logreg.joblib \
+  --metrics reports/prm800k_train_metrics.json
+
+PYTHONPATH=src python -m math_solution_analyzer.evaluation \
+  --model models/prm800k_tfidf_logreg.joblib \
+  --eval-dataset data/processed/processbench_steps.csv \
+  --metrics reports/prm800k_to_processbench_metrics.json \
+  --confusion-matrix reports/prm800k_to_processbench_confusion_matrix.png \
+  --predictions reports/prm800k_to_processbench_predictions.json
+```
+
+То же самое одной командой:
+
+```bash
+PYTHONPATH=src python -m math_solution_analyzer.experiments.prm800k_to_processbench
+```
+
+Experiment runner also writes `reports/prm800k_to_processbench_error_analysis.md`.
+
 ## Метрики
 
 Метрики сохраняются в `reports/metrics.json` и `reports/evaluation.json`.
 
-| Модель | Accuracy | Macro-F1 | Error step F1 |
-| --- | ---: | ---: | ---: |
-| Rule-based baseline | 0.6265 | 0.5936 | 0.6545 |
-| TF-IDF + numeric + SymPy LogReg | 0.9486 | 0.9638 | 0.9583 |
-| CatBoost | planned | planned | planned |
-| RuBERT-tiny | planned | planned | planned |
-| Hybrid SymPy + RuBERT | planned | planned | planned |
+| Модель | Train | Eval | Macro-F1 | First-error acc |
+| --- | --- | --- | ---: | ---: |
+| Rule-based baseline | - | toy synthetic | 0.5936 | см. `reports/evaluation.json` |
+| TF-IDF + numeric + SymPy LogReg | toy synthetic | toy synthetic group split | 0.9652 | 1.0000 |
+| TF-IDF + numeric + SymPy LogReg | PRM800K subset | ProcessBench | ready-to-run | ready-to-run |
+| Embeddings + LogReg | PRM800K subset | ProcessBench | planned | planned |
+| Transformer fine-tuning | PRM800K | ProcessBench | planned | planned |
 
-Для отдельной задачи классификации `error_type` текущий baseline даёт `accuracy=0.9506`, `macro-F1=0.9633` на group split. Подробности и ограничения описаны в `reports/error_analysis.md`.
+Для отдельной задачи классификации `error_type` текущий toy baseline даёт `accuracy=0.9506`, `macro-F1=0.9633` на group split. Для ProcessBench дополнительно считаются `first_error_accuracy`, `first_error_macro_f1`, `all_correct_accuracy` и сохраняются probability scores по шагам: `p_correct`, `p_incorrect`, `p_suspicious`.
 
 Ранний случайный split давал 1.000/1.000, но это было плохим сигналом: модель видела почти одинаковые шаблоны одной задачи в train и test. Поэтому текущая оценка считается только через group split по `problem_id`.
+
+`metrics.json` и `evaluation.json` также содержат `train_sources`, `eval_sources` и `metrics_by_source`, чтобы было видно, на каких источниках модель обучалась и проверялась. Пример step-level probability output лежит в `reports/toy_predictions.json`.
 
 ## Быстрый старт
 
@@ -222,6 +248,8 @@ export OPENAI_MODEL="gpt-4.1-mini"
 │   ├── features.py
 │   ├── cli.py
 │   ├── checker.py
+│   ├── experiments
+│   │   └── prm800k_to_processbench.py
 │   ├── parser.py
 │   ├── pipeline.py
 │   ├── report_generator.py

@@ -46,6 +46,7 @@ class MLStepPrediction(BaseModel):
     error_type: str = "none"
     confidence: float = Field(0.0, ge=0.0, le=1.0)
     model_name: str = "unavailable"
+    label_probabilities: dict[str, float] = Field(default_factory=dict)
 
 
 class StepAnalysis(BaseModel):

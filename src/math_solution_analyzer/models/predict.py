@@ -41,9 +41,14 @@ class StepMLClassifier:
         frame = pd.DataFrame([feature_row])
         label = str(self.label_model.predict(frame)[0])
         confidence = 0.0
+        label_probabilities: dict[str, float] = {}
         if hasattr(self.label_model, "predict_proba"):
             probabilities = self.label_model.predict_proba(frame)[0]
             confidence = float(max(probabilities))
+            label_probabilities = {
+                str(label_name): round(float(probability), 4)
+                for label_name, probability in zip(self.label_model.classes_, probabilities)
+            }
         error_type = "none"
         if self.error_type_model is not None:
             error_type = str(self.error_type_model.predict(frame)[0])
@@ -54,6 +59,7 @@ class StepMLClassifier:
             error_type=error_type,
             confidence=round(confidence, 4),
             model_name=self.model_path.name,
+            label_probabilities=label_probabilities,
         )
 
 

@@ -9,7 +9,9 @@
 | Модель | Label accuracy | Label macro-F1 | Error step F1 | Error type macro-F1 |
 | --- | ---: | ---: | ---: | ---: |
 | Rule-based baseline | 0.6265 | 0.5936 | 0.6545 | n/a |
-| TF-IDF + numeric + SymPy LogReg | 0.9486 | 0.9638 | 0.9583 | 0.9633 |
+| TF-IDF + numeric + SymPy LogReg | 0.9506 | 0.9652 | 0.9600 | 0.9633 |
+
+Toy first-error accuracy is currently 1.0000, but this should not be treated as a strong result: the synthetic generator makes the first wrong step comparatively easy to identify. The meaningful version of this metric is the cross-dataset PRM800K -> ProcessBench experiment.
 
 ## Где модель ошибается
 
