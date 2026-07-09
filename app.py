@@ -12,7 +12,7 @@ st.set_page_config(page_title="Анализатор решений", page_icon="
 st.title("Анализатор решений математических задач")
 
 with st.sidebar:
-    use_llm = st.toggle("Проверять через OpenAI API", value=True)
+    use_llm = st.toggle("Добавлять OpenAI-объяснение", value=True)
     show_json = st.toggle("Показать JSON", value=True)
 
 problem = st.text_area(
@@ -70,6 +70,9 @@ if st.button("Проверить решение", type="primary"):
                             f"- `{step.ml_prediction.label.value}` / `{step.ml_prediction.error_type}` "
                             f"confidence={step.ml_prediction.confidence}"
                         )
+                    if step.llm_explanation:
+                        st.markdown("**LLM explanation**")
+                        st.write(step.llm_explanation)
                     if step.missing_steps:
                         st.markdown("**Пропущено**")
                         for missing in step.missing_steps:

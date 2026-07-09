@@ -1,6 +1,16 @@
 from math_solution_analyzer import analyze_solution
+from math_solution_analyzer.schema import StepAnalysis
 from math_solution_analyzer.parser import parse_input
 from math_solution_analyzer.step_splitter import split_solution_into_steps
+
+
+class FakeExplanationGenerator:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def explain_step(self, *, problem: str, analysis: StepAnalysis) -> str:
+        self.calls += 1
+        return f"Пояснение для шага {analysis.step.index}"
 
 
 def test_parse_detects_latex() -> None:
@@ -34,3 +44,27 @@ def test_pipeline_returns_required_sections() -> None:
     assert report.where_possible_error
     assert report.missing_steps
     assert report.how_to_fix
+
+
+def test_pipeline_uses_llm_explanation_generator_when_enabled() -> None:
+    generator = FakeExplanationGenerator()
+    report = analyze_solution(
+        "Вычислите 2 + 2.",
+        "1. Складываем числа.\n2. 2 + 2 = 5.",
+        use_llm=True,
+        explanation_generator=generator,
+    )
+    assert generator.calls == 2
+    assert report.steps[0].llm_explanation == "Пояснение для шага 1"
+
+
+def test_pipeline_skips_llm_explanation_generator_when_disabled() -> None:
+    generator = FakeExplanationGenerator()
+    report = analyze_solution(
+        "Вычислите 2 + 2.",
+        "1. Складываем числа.",
+        use_llm=False,
+        explanation_generator=generator,
+    )
+    assert generator.calls == 0
+    assert report.steps[0].llm_explanation is None

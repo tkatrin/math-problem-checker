@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .checker import RuleBasedChecker, StepChecker
+from .explanation import ExplanationGenerator, build_explanation_generator
 from .models.predict import StepMLClassifier, load_default_classifier
 from .parser import parse_input
 from .report_generator import generate_report
@@ -15,6 +16,7 @@ def analyze_solution(
     use_llm: bool = True,
     checker: StepChecker | None = None,
     ml_classifier: StepMLClassifier | None = None,
+    explanation_generator: ExplanationGenerator | None = None,
 ) -> AnalysisReport:
     parsed = parse_input(problem, solution)
     steps = split_solution_into_steps(parsed.solution)
@@ -34,6 +36,9 @@ def analyze_solution(
 
     rule_checker = RuleBasedChecker()
     selected_ml_classifier = ml_classifier if ml_classifier is not None else load_default_classifier()
+    selected_explanation_generator = explanation_generator if use_llm else None
+    if selected_explanation_generator is None:
+        selected_explanation_generator = build_explanation_generator(use_llm=use_llm)
 
     for step in steps:
         previous_steps = [analysis.step for analysis in analyses]
@@ -50,6 +55,8 @@ def analyze_solution(
                 step_index=step.index,
             )
             _merge_ml_prediction(analysis, ml_prediction)
+        if selected_explanation_generator is not None:
+            _attach_llm_explanation(selected_explanation_generator, parsed.problem, analysis)
         analyses.append(analysis)
 
     return generate_report(parsed.problem, analyses, contains_latex=parsed.contains_latex)
@@ -78,6 +85,20 @@ def _merge_ml_prediction(analysis: StepAnalysis, prediction: MLStepPrediction) -
         analysis.missing_steps.append("ML-модель считает, что в этом месте может не хватать промежуточного шага.")
     if prediction.label == StepStatus.SUSPICIOUS:
         analysis.how_to_fix.append("Уточните рассуждение: покажите формулу, подстановку или используемое правило.")
+
+
+def _attach_llm_explanation(generator: ExplanationGenerator, problem: str, analysis: StepAnalysis) -> None:
+    try:
+        analysis.llm_explanation = generator.explain_step(problem=problem, analysis=analysis)
+    except Exception as exc:
+        analysis.possible_errors.append(
+            Issue(
+                severity=Severity.WARNING,
+                title="LLM-объяснение недоступно",
+                explanation=f"Не удалось сформировать LLM-объяснение: {exc.__class__.__name__}.",
+                recommendation="Проверьте OPENAI_API_KEY, OPENAI_MODEL и сетевой доступ. Rule/ML-анализ уже выполнен.",
+            )
+        )
 
 
 def _ml_label_is_more_severe(candidate: StepStatus, current: StepStatus) -> bool:

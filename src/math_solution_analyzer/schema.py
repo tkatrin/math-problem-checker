@@ -57,6 +57,7 @@ class StepAnalysis(BaseModel):
     how_to_fix: list[str] = Field(default_factory=list)
     confidence: float = Field(0.5, ge=0.0, le=1.0)
     ml_prediction: MLStepPrediction | None = None
+    llm_explanation: str | None = None
 
 
 class AnalysisReport(BaseModel):
