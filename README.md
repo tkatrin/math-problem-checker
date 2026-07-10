@@ -275,10 +275,5 @@ export OPENAI_MODEL="gpt-4.1-mini"
 - как исправить;
 - предсказание ML baseline, если модель обучена и лежит в `models/tfidf_logreg.joblib`.
 
-## Формулировка для резюме
-
-Разработала ML-систему для пошаговой классификации математических решений: подготовила единую схему для step-level датасетов, добавила адаптеры для PRM800K и ProcessBench, реализовала feature extraction с SymPy-признаками, обучила baseline-модель TF-IDF + Logistic Regression, сравнила качество по accuracy/macro-F1/step-level F1 и интегрировала классификатор в Streamlit-приложение.
-
-## Ограничения
 
 Текущий `data/processed/step_classification.csv` остаётся toy/smoke датасетом. Для сильной оценки качества нужно обучаться на PRM800K, а оценивать перенос на ProcessBench или отдельном holdout из реальных решений. Synthetic данные не следует использовать как основное доказательство качества модели.
