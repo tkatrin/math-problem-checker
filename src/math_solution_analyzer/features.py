@@ -108,7 +108,10 @@ def make_model_text(problem: str, previous_steps: list[str], current_step: str) 
 
 
 def sympy_arithmetic_error(text: str) -> bool:
+    has_remainder_statement = bool(re.search(r"(?:remainder|остат(?:ок|ком))", text, flags=re.IGNORECASE))
     for left, op, right, result in ARITHMETIC_RE.findall(text):
+        if op == "/" and has_remainder_statement:
+            continue
         expected = _safe_eval_binary(left, op, right)
         if expected is None:
             continue

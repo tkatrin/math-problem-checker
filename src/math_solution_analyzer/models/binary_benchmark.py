@@ -29,6 +29,12 @@ ModelFamily = Literal["tfidf_logreg", "tfidf_lightgbm", "embedding_logreg", "emb
 BalanceStrategy = Literal["none", "class_weight", "undersample_correct", "oversample_incorrect"]
 FirstErrorStrategy = Literal["threshold", "hard_label", "hybrid", "argmax"]
 
+POSITION_LEAKAGE_FEATURES = {
+    "step_index",
+    "previous_step_count",
+    "previous_context_chars",
+}
+
 
 @dataclass(frozen=True)
 class BinaryModelConfig:
@@ -79,12 +85,30 @@ def build_feature_frame(df: pd.DataFrame, *, cache_path: Path | None = None, bat
         # frame keeps arithmetic and targeted symbolic-validator flags.
         batch = _build_features_frame(df.iloc[start : start + batch_size], expensive_symbolic=False)
         batch.index = df.index[start : start + batch_size]
+        batch["model_text"] = [
+            make_binary_model_text(str(problem), str(previous), str(step))
+            for problem, previous, step in zip(
+                df.iloc[start : start + batch_size]["problem"],
+                df.iloc[start : start + batch_size]["previous_steps"],
+                df.iloc[start : start + batch_size]["current_step"],
+            )
+        ]
         batches.append(batch)
     features = pd.concat(batches, axis=0)
     if cache_path is not None:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         features.to_pickle(cache_path)
     return features
+
+
+def make_binary_model_text(problem: str, previous_steps: str, current_step: str) -> str:
+    """Use compact local evidence and avoid PRM trajectory-position leakage."""
+
+    compact_problem = " ".join(problem.split())[:600]
+    previous = "" if previous_steps.lower() == "nan" else previous_steps.split(" ||| ")[-1]
+    compact_previous = " ".join(previous.split())[:500]
+    compact_step = " ".join(current_step.split())[:900]
+    return f"[PROBLEM] {compact_problem} [PREVIOUS] {compact_previous} [STEP] {compact_step}"
 
 
 def split_calibration_rows(df: pd.DataFrame, *, seed: int = 42) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -106,7 +130,11 @@ def fit_binary_model(
     train_features, train_target = _apply_balance(features, target, config, embedding_matrix)
 
     if config.family.startswith("tfidf"):
-        numeric_features = [column for column in features.columns if column != "model_text"]
+        numeric_features = [
+            column
+            for column in features.columns
+            if column != "model_text" and column not in POSITION_LEAKAGE_FEATURES
+        ]
         classifier = _make_classifier(config)
         model = Pipeline(
             steps=[
@@ -114,7 +142,19 @@ def fit_binary_model(
                     "preprocess",
                     ColumnTransformer(
                         transformers=[
-                            ("text", TfidfVectorizer(ngram_range=(1, 2), min_df=2, sublinear_tf=True), "model_text"),
+                            (
+                                "text",
+                                TfidfVectorizer(
+                                    ngram_range=(1, 2),
+                                    min_df=3,
+                                    max_df=0.995,
+                                    max_features=30_000,
+                                    sublinear_tf=True,
+                                    strip_accents="unicode",
+                                    dtype=np.float32,
+                                ),
+                                "model_text",
+                            ),
                             ("num", StandardScaler(with_mean=False), numeric_features),
                         ],
                         remainder="drop",
@@ -171,8 +211,29 @@ def encode_texts(texts: pd.Series, *, cache_path: Path, model_name: str = "intfl
 
 
 def embedding_with_numeric_features(embeddings: np.ndarray, features: pd.DataFrame) -> np.ndarray:
-    numeric = features.drop(columns=["model_text"]).to_numpy(dtype=np.float32)
+    numeric = features.drop(columns=["model_text", *POSITION_LEAKAGE_FEATURES]).to_numpy(dtype=np.float32)
     return np.hstack([embeddings, numeric])
+
+
+def apply_symbolic_overrides(features: pd.DataFrame, probabilities: np.ndarray) -> np.ndarray:
+    """Promote deterministic validator failures without replacing the ML score."""
+
+    symbolic_columns = [
+        "sympy_error",
+        "sympy_equivalence_error",
+        "derivative_check_error",
+        "linear_solution_check_error",
+        "probability_fraction_warning",
+        "division_remainder_error",
+        "polynomial_factorization_error",
+    ]
+    available = [column for column in symbolic_columns if column in features.columns]
+    if not available:
+        return probabilities
+    result = np.asarray(probabilities, dtype=float).copy()
+    deterministic_error = features[available].max(axis=1).to_numpy(dtype=bool)
+    result[deterministic_error] = np.maximum(result[deterministic_error], 0.99)
+    return result
 
 
 def evaluate_binary_predictions(

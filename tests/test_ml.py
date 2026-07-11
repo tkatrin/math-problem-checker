@@ -12,8 +12,17 @@ from math_solution_analyzer.data_sources.processbench import normalize_processbe
 from math_solution_analyzer.data_sources.common import write_rows_csv
 from math_solution_analyzer.evaluation import evaluate
 from math_solution_analyzer.experiments.prm800k_to_processbench import _format_examples, run_experiment
-from math_solution_analyzer.features import check_division_remainder, check_polynomial_factorization, extract_step_features
-from math_solution_analyzer.models.binary_benchmark import first_error_metrics, select_problem_groups_by_step_budget
+from math_solution_analyzer.features import (
+    check_division_remainder,
+    check_polynomial_factorization,
+    extract_step_features,
+    sympy_arithmetic_error,
+)
+from math_solution_analyzer.models.binary_benchmark import (
+    first_error_metrics,
+    make_binary_model_text,
+    select_problem_groups_by_step_budget,
+)
 from math_solution_analyzer.models.predict import StepMLClassifier
 from math_solution_analyzer.models.train import train_baseline
 from math_solution_analyzer.schema import MLStepPrediction
@@ -203,6 +212,8 @@ def test_error_analysis_formats_step_text() -> None:
 
 def test_symbolic_validators_catch_remainder_and_factorization_errors() -> None:
     assert check_division_remainder("194 / 11 = 17 with a remainder 9") is False
+    assert check_division_remainder("194 / 11 = 17 with a remainder 7") is True
+    assert sympy_arithmetic_error("194 / 11 = 17 with a remainder 7") is False
     assert check_polynomial_factorization("x^2 - 2*x - 7 = 0; (x - 7)(x + 5) = 0") is False
 
 
@@ -219,6 +230,12 @@ def test_binary_first_error_argmax_and_group_sampling() -> None:
     assert metrics["first_error_accuracy"] == 1.0
     sampled = select_problem_groups_by_step_budget(rows, 3, seed=7)
     assert all(len(group) == 2 for _, group in sampled.groupby("problem_id"))
+
+
+def test_binary_text_uses_only_immediate_previous_step() -> None:
+    text = make_binary_model_text("Solve x.", "old context ||| x = 2", "Therefore x = 2")
+    assert "x = 2" in text
+    assert "old context" not in text
 
 
 def test_external_eval_saves_first_error_metrics_and_probabilities(tmp_path: Path) -> None:

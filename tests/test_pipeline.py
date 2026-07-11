@@ -38,6 +38,8 @@ def test_pipeline_catches_arithmetic_error_without_llm() -> None:
     )
     assert report.metadata["step_count"] == 3
     assert any("должно давать 4" in item for item in report.where_possible_error)
+    assert report.steps[2].status.value == "needs_attention"
+    assert any("зависит от предыдущей ошибки" in issue.title.lower() for issue in report.steps[2].possible_errors)
 
 
 def test_pipeline_returns_required_sections() -> None:

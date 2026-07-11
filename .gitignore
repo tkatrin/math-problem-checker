@@ -14,4 +14,5 @@ models/prm800k_*.joblib
 reports/prm800k_*_predictions.json
 data/cache/
 models/binary_*.joblib
+!models/binary_prm800k_target_adapted.joblib
 reports/binary_*_predictions.json

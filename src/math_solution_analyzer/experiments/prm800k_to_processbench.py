@@ -112,17 +112,31 @@ def _sample_prediction_errors(predictions_path: Path, limit: int = 5) -> tuple[l
     if not predictions_path.exists():
         return [], []
     rows = json.loads(predictions_path.read_text(encoding="utf-8"))
-    false_positives = [
+    false_positives = _one_per_problem([
         row
         for row in rows
         if row.get("true_label") != "incorrect" and row.get("predicted_label") == "incorrect"
-    ][:limit]
-    false_negatives = [
+    ], limit)
+    false_negatives = _one_per_problem([
         row
         for row in rows
         if row.get("true_label") == "incorrect" and row.get("predicted_label") != "incorrect"
-    ][:limit]
+    ], limit)
     return false_positives, false_negatives
+
+
+def _one_per_problem(rows: list[dict], limit: int) -> list[dict]:
+    selected: list[dict] = []
+    seen: set[str] = set()
+    for row in rows:
+        problem_id = str(row.get("problem_id"))
+        if problem_id in seen:
+            continue
+        seen.add(problem_id)
+        selected.append(row)
+        if len(selected) >= limit:
+            break
+    return selected
 
 
 def _format_examples(examples: list[dict]) -> list[str]:

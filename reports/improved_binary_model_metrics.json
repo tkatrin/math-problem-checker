@@ -1,0 +1,51 @@
+{
+  "protocol": "20% ProcessBench groups for adaptation/calibration, 80% held-out groups for test",
+  "adaptation_problems": 200,
+  "target_repeat": 4,
+  "test_problems": 800,
+  "threshold": {
+    "step_rows": 3462,
+    "label_accuracy": 0.8281,
+    "label_macro_f1": 0.5957,
+    "incorrect_recall": 0.2542,
+    "first_error_accuracy": 0.41,
+    "first_error_macro_f1": 0.2204,
+    "all_correct_accuracy": 0.75,
+    "first_error_strategy": "threshold",
+    "first_error_threshold": 0.65
+  },
+  "hard_label": {
+    "step_rows": 3462,
+    "label_accuracy": 0.7868,
+    "label_macro_f1": 0.594,
+    "incorrect_recall": 0.355,
+    "first_error_accuracy": 0.3825,
+    "first_error_macro_f1": 0.1362,
+    "all_correct_accuracy": 0.6728,
+    "first_error_strategy": "hard_label",
+    "first_error_threshold": 0.5
+  },
+  "argmax": {
+    "step_rows": 3462,
+    "label_accuracy": 0.8177,
+    "label_macro_f1": 0.5997,
+    "incorrect_recall": 0.2899,
+    "first_error_accuracy": 0.395,
+    "first_error_macro_f1": 0.1986,
+    "all_correct_accuracy": 0.7222,
+    "first_error_strategy": "argmax",
+    "first_error_threshold": 0.6
+  },
+  "calibration_thresholds": {
+    "threshold": {
+      "threshold": 0.65,
+      "first_error_accuracy": 0.5,
+      "first_error_macro_f1": 0.3371
+    },
+    "argmax": {
+      "threshold": 0.6,
+      "first_error_accuracy": 0.525,
+      "first_error_macro_f1": 0.3557
+    }
+  }
+}

@@ -79,6 +79,7 @@ def analyze_solution(
                 step_index=step.index,
             )
             _merge_ml_prediction(analysis, ml_prediction)
+        _propagate_unresolved_error(analysis, analyses)
         if selected_explanation_generator is not None and analysis.status != StepStatus.CORRECT:
             _attach_llm_explanation(selected_explanation_generator, parsed.problem, analysis)
         analyses.append(analysis)
@@ -127,6 +128,31 @@ def _attach_llm_explanation(generator: ExplanationGenerator, problem: str, analy
                 recommendation="Проверьте OPENAI_API_KEY, OPENAI_MODEL и сетевой доступ. Rule/ML-анализ уже выполнен.",
             )
         )
+
+
+def _propagate_unresolved_error(analysis: StepAnalysis, previous_analyses: list[StepAnalysis]) -> None:
+    if analysis.status != StepStatus.CORRECT:
+        return
+    latest_error_index = next(
+        (index for index in range(len(previous_analyses) - 1, -1, -1) if previous_analyses[index].status == StepStatus.INCORRECT),
+        None,
+    )
+    if latest_error_index is None:
+        return
+    correction_markers = ("исправ", "поправ", "коррект", "correct", "instead", "пересч")
+    texts_after_error = [item.step.text.lower() for item in previous_analyses[latest_error_index + 1 :]]
+    texts_after_error.append(analysis.step.text.lower())
+    if any(marker in text for text in texts_after_error for marker in correction_markers):
+        return
+    analysis.status = StepStatus.NEEDS_ATTENTION
+    analysis.possible_errors.append(
+        Issue(
+            severity=Severity.WARNING,
+            title="Шаг зависит от предыдущей ошибки",
+            explanation="Ранее в решении найдена ошибка, а явного исправления перед этим шагом нет.",
+            recommendation="Сначала исправьте ошибочный переход, затем пересчитайте этот и последующие шаги.",
+        )
+    )
 
 
 def _ml_label_is_more_severe(candidate: StepStatus, current: StepStatus) -> bool:
