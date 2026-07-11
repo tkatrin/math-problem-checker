@@ -245,6 +245,7 @@ def _fit_calibrate_evaluate(
     config: BinaryModelConfig,
     train_matrix: np.ndarray | None = None,
     eval_matrix: np.ndarray | None = None,
+    use_symbolic_overrides: bool = True,
 ) -> dict:
     fit_df, calibration_df = split_calibration_rows(train_df, seed=config.seed)
     fit_features = train_features.loc[fit_df.index]
@@ -259,9 +260,10 @@ def _fit_calibrate_evaluate(
         embedding_matrix=fit_matrix,
     )
     calibration_input = calibration_matrix if calibration_matrix is not None else calibration_features
-    calibration_probability = apply_symbolic_overrides(
+    calibration_probability = _maybe_apply_symbolic_overrides(
         calibration_features,
         predict_incorrect_probability(calibration_model, calibration_input),
+        enabled=use_symbolic_overrides,
     )
     threshold_tuning = tune_threshold(calibration_df, calibration_probability, strategy="threshold")
     argmax_tuning = tune_threshold(calibration_df, calibration_probability, strategy="argmax")
@@ -273,9 +275,10 @@ def _fit_calibrate_evaluate(
         embedding_matrix=train_matrix,
     )
     eval_input = eval_matrix if eval_matrix is not None else eval_features
-    eval_probability = apply_symbolic_overrides(
+    eval_probability = _maybe_apply_symbolic_overrides(
         eval_features,
         predict_incorrect_probability(final_model, eval_input),
+        enabled=use_symbolic_overrides,
     )
     external_metrics = evaluate_binary_predictions(
         eval_df,
@@ -318,50 +321,38 @@ def _fit_target_adapted(
     config: BinaryModelConfig,
     target_repeat: int = 4,
     model_path: Path | None = None,
+    use_symbolic_overrides: bool = True,
 ) -> dict:
-    from sklearn.model_selection import GroupShuffleSplit
-
-    outer = GroupShuffleSplit(n_splits=1, train_size=0.2, random_state=config.seed)
-    adapt_idx, test_idx = next(outer.split(processbench_df, groups=processbench_df["problem_id"].astype(str)))
-    adapt_all = processbench_df.iloc[adapt_idx].copy()
-    test_df = processbench_df.iloc[test_idx].copy()
+    adapt_all, calibration_all, test_df = split_target_domain_groups(processbench_df, seed=config.seed)
     adapt_binary = binary_training_rows(adapt_all)
-    adapt_fit, adapt_calibration = split_calibration_rows(adapt_binary, seed=config.seed)
-
-    repeated_adapt_fit = pd.concat([adapt_fit] * target_repeat, ignore_index=True)
-    repeated_adapt_fit_features = pd.concat(
-        [processbench_features.loc[adapt_fit.index]] * target_repeat,
-        ignore_index=True,
-    )
-    combined_df = pd.concat([prm_df, repeated_adapt_fit], ignore_index=True)
-    combined_features = pd.concat(
-        [prm_features, repeated_adapt_fit_features],
-        ignore_index=True,
-    )
-    calibration_features = processbench_features.loc[adapt_calibration.index]
-    calibration_model = fit_binary_model(combined_features, combined_df["label"], config)
-    calibration_probability = apply_symbolic_overrides(
-        calibration_features,
-        predict_incorrect_probability(calibration_model, calibration_features),
-    )
-    threshold_tuning = tune_threshold(adapt_calibration, calibration_probability, strategy="threshold")
-    argmax_tuning = tune_threshold(adapt_calibration, calibration_probability, strategy="argmax")
+    calibration_binary = binary_training_rows(calibration_all)
 
     repeated_adapt = pd.concat([adapt_binary] * target_repeat, ignore_index=True)
     repeated_adapt_features = pd.concat(
         [processbench_features.loc[adapt_binary.index]] * target_repeat,
         ignore_index=True,
     )
-    final_df = pd.concat([prm_df, repeated_adapt], ignore_index=True)
-    final_features = pd.concat(
+    combined_df = pd.concat([prm_df, repeated_adapt], ignore_index=True)
+    combined_features = pd.concat(
         [prm_features, repeated_adapt_features],
         ignore_index=True,
     )
-    final_model = fit_binary_model(final_features, final_df["label"], config)
+    calibration_features = processbench_features.loc[calibration_binary.index]
+    calibration_model = fit_binary_model(combined_features, combined_df["label"], config)
+    calibration_probability = _maybe_apply_symbolic_overrides(
+        calibration_features,
+        predict_incorrect_probability(calibration_model, calibration_features),
+        enabled=use_symbolic_overrides,
+    )
+    threshold_tuning = tune_threshold(calibration_binary, calibration_probability, strategy="threshold")
+    argmax_tuning = tune_threshold(calibration_binary, calibration_probability, strategy="argmax")
+
+    final_model = calibration_model
     test_features = processbench_features.loc[test_df.index]
-    test_probability = apply_symbolic_overrides(
+    test_probability = _maybe_apply_symbolic_overrides(
         test_features,
         predict_incorrect_probability(final_model, test_features),
+        enabled=use_symbolic_overrides,
     )
     if model_path is not None:
         model_path.parent.mkdir(parents=True, exist_ok=True)
@@ -371,13 +362,14 @@ def _fit_target_adapted(
                 "label_model": final_model,
                 "step_threshold": 0.5,
                 "first_error_threshold": threshold_tuning["threshold"],
-                "training_protocol": "PRM800K + 20% ProcessBench target adaptation",
+                "training_protocol": "PRM800K + 10% ProcessBench adaptation; separate 10% calibration",
             },
             model_path,
         )
     return {
-        "protocol": "20% ProcessBench groups for adaptation/calibration, 80% held-out groups for test",
+        "protocol": "10% ProcessBench adaptation, separate 10% calibration, 80% held-out test; all splits by problem_id",
         "adaptation_problems": int(adapt_all["problem_id"].nunique()),
+        "calibration_problems": int(calibration_all["problem_id"].nunique()),
         "target_repeat": target_repeat,
         "test_problems": int(test_df["problem_id"].nunique()),
         "threshold": evaluate_binary_predictions(
@@ -400,6 +392,35 @@ def _fit_target_adapted(
         ),
         "calibration_thresholds": {"threshold": threshold_tuning, "argmax": argmax_tuning},
     }
+
+
+def split_target_domain_groups(
+    df: pd.DataFrame,
+    *,
+    seed: int,
+    adaptation_fraction: float = 0.1,
+    calibration_fraction: float = 0.1,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    problem_ids = np.array(sorted(df["problem_id"].astype(str).unique()))
+    rng = np.random.default_rng(seed)
+    rng.shuffle(problem_ids)
+    adaptation_count = max(1, round(len(problem_ids) * adaptation_fraction))
+    calibration_count = max(1, round(len(problem_ids) * calibration_fraction))
+    adaptation_ids = set(problem_ids[:adaptation_count])
+    calibration_ids = set(problem_ids[adaptation_count : adaptation_count + calibration_count])
+    adaptation = df[df["problem_id"].astype(str).isin(adaptation_ids)].copy()
+    calibration = df[df["problem_id"].astype(str).isin(calibration_ids)].copy()
+    test = df[~df["problem_id"].astype(str).isin(adaptation_ids | calibration_ids)].copy()
+    return adaptation, calibration, test
+
+
+def _maybe_apply_symbolic_overrides(
+    features: pd.DataFrame,
+    probabilities: np.ndarray,
+    *,
+    enabled: bool,
+) -> np.ndarray:
+    return apply_symbolic_overrides(features, probabilities) if enabled else probabilities
 
 
 def _subset_matrix(matrix: np.ndarray | None, source_index: pd.Index, requested_index: pd.Index) -> np.ndarray | None:

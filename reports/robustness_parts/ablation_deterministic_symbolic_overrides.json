@@ -1,0 +1,6 @@
+{
+  "variant": "deterministic_symbolic_overrides",
+  "label_macro_f1": 0.5425,
+  "incorrect_recall": 0.6639,
+  "first_error_accuracy": 0.3013
+}

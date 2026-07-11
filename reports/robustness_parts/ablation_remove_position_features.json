@@ -1,0 +1,6 @@
+{
+  "variant": "remove_position_features",
+  "label_macro_f1": 0.5448,
+  "incorrect_recall": 0.6471,
+  "first_error_accuracy": 0.31
+}

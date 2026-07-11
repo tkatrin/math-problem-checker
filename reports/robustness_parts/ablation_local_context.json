@@ -1,0 +1,6 @@
+{
+  "variant": "local_context",
+  "label_macro_f1": 0.562,
+  "incorrect_recall": 0.5777,
+  "first_error_accuracy": 0.3412
+}

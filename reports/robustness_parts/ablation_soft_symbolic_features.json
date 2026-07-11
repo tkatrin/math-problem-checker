@@ -1,0 +1,6 @@
+{
+  "variant": "soft_symbolic_features",
+  "label_macro_f1": 0.5458,
+  "incorrect_recall": 0.6492,
+  "first_error_accuracy": 0.3113
+}

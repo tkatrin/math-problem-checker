@@ -12,6 +12,7 @@ from math_solution_analyzer.data_sources.processbench import normalize_processbe
 from math_solution_analyzer.data_sources.common import write_rows_csv
 from math_solution_analyzer.evaluation import evaluate
 from math_solution_analyzer.experiments.prm800k_to_processbench import _format_examples, run_experiment
+from math_solution_analyzer.experiments.binary_prm800k_scaling import split_target_domain_groups
 from math_solution_analyzer.features import (
     check_division_remainder,
     check_polynomial_factorization,
@@ -236,6 +237,24 @@ def test_binary_text_uses_only_immediate_previous_step() -> None:
     text = make_binary_model_text("Solve x.", "old context ||| x = 2", "Therefore x = 2")
     assert "x = 2" in text
     assert "old context" not in text
+
+
+def test_target_adaptation_calibration_and_test_groups_are_disjoint() -> None:
+    rows = pd.DataFrame(
+        [
+            {"problem_id": f"p-{problem}", "step_index": step, "label": "correct"}
+            for problem in range(20)
+            for step in (1, 2)
+        ]
+    )
+    adaptation, calibration, test = split_target_domain_groups(rows, seed=42)
+    adaptation_ids = set(adaptation["problem_id"])
+    calibration_ids = set(calibration["problem_id"])
+    test_ids = set(test["problem_id"])
+    assert adaptation_ids.isdisjoint(calibration_ids)
+    assert adaptation_ids.isdisjoint(test_ids)
+    assert calibration_ids.isdisjoint(test_ids)
+    assert adaptation_ids | calibration_ids | test_ids == set(rows["problem_id"])
 
 
 def test_external_eval_saves_first_error_metrics_and_probabilities(tmp_path: Path) -> None:

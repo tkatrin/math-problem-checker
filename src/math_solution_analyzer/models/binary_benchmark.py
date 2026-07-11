@@ -34,6 +34,17 @@ POSITION_LEAKAGE_FEATURES = {
     "previous_step_count",
     "previous_context_chars",
 }
+SYMBOLIC_FEATURES = {
+    "sympy_error",
+    "sympy_equivalence_ok",
+    "sympy_equivalence_error",
+    "derivative_check_ok",
+    "derivative_check_error",
+    "linear_solution_check_error",
+    "probability_fraction_warning",
+    "division_remainder_error",
+    "polynomial_factorization_error",
+}
 
 
 @dataclass(frozen=True)
@@ -42,6 +53,8 @@ class BinaryModelConfig:
     balance_strategy: BalanceStrategy = "class_weight"
     incorrect_weight: float = 4.0
     seed: int = 42
+    include_position_features: bool = False
+    include_symbolic_features: bool = True
 
 
 def binary_training_rows(df: pd.DataFrame) -> pd.DataFrame:
@@ -71,7 +84,13 @@ def select_problem_groups_by_step_budget(df: pd.DataFrame, budget: int, *, seed:
     return df.loc[selected_indices].sort_index().copy()
 
 
-def build_feature_frame(df: pd.DataFrame, *, cache_path: Path | None = None, batch_size: int = 5_000) -> pd.DataFrame:
+def build_feature_frame(
+    df: pd.DataFrame,
+    *,
+    cache_path: Path | None = None,
+    batch_size: int = 5_000,
+    context_steps: int = 1,
+) -> pd.DataFrame:
     """Extract and optionally cache TF-IDF-ready text plus handcrafted features."""
 
     if cache_path is not None and cache_path.exists():
@@ -86,7 +105,7 @@ def build_feature_frame(df: pd.DataFrame, *, cache_path: Path | None = None, bat
         batch = _build_features_frame(df.iloc[start : start + batch_size], expensive_symbolic=False)
         batch.index = df.index[start : start + batch_size]
         batch["model_text"] = [
-            make_binary_model_text(str(problem), str(previous), str(step))
+            make_binary_model_text(str(problem), str(previous), str(step), context_steps=context_steps)
             for problem, previous, step in zip(
                 df.iloc[start : start + batch_size]["problem"],
                 df.iloc[start : start + batch_size]["previous_steps"],
@@ -101,12 +120,13 @@ def build_feature_frame(df: pd.DataFrame, *, cache_path: Path | None = None, bat
     return features
 
 
-def make_binary_model_text(problem: str, previous_steps: str, current_step: str) -> str:
+def make_binary_model_text(problem: str, previous_steps: str, current_step: str, *, context_steps: int = 1) -> str:
     """Use compact local evidence and avoid PRM trajectory-position leakage."""
 
     compact_problem = " ".join(problem.split())[:600]
-    previous = "" if previous_steps.lower() == "nan" else previous_steps.split(" ||| ")[-1]
-    compact_previous = " ".join(previous.split())[:500]
+    history = [] if previous_steps.lower() == "nan" else previous_steps.split(" ||| ")
+    previous = " ".join(history[-context_steps:]) if context_steps > 0 else ""
+    compact_previous = " ".join(previous.split())[:700]
     compact_step = " ".join(current_step.split())[:900]
     return f"[PROBLEM] {compact_problem} [PREVIOUS] {compact_previous} [STEP] {compact_step}"
 
@@ -130,11 +150,12 @@ def fit_binary_model(
     train_features, train_target = _apply_balance(features, target, config, embedding_matrix)
 
     if config.family.startswith("tfidf"):
-        numeric_features = [
-            column
-            for column in features.columns
-            if column != "model_text" and column not in POSITION_LEAKAGE_FEATURES
-        ]
+        excluded = {"model_text"}
+        if not config.include_position_features:
+            excluded.update(POSITION_LEAKAGE_FEATURES)
+        if not config.include_symbolic_features:
+            excluded.update(SYMBOLIC_FEATURES)
+        numeric_features = [column for column in features.columns if column not in excluded]
         classifier = _make_classifier(config)
         model = Pipeline(
             steps=[
@@ -210,8 +231,19 @@ def encode_texts(texts: pd.Series, *, cache_path: Path, model_name: str = "intfl
     return np.asarray(vectors, dtype=np.float32)
 
 
-def embedding_with_numeric_features(embeddings: np.ndarray, features: pd.DataFrame) -> np.ndarray:
-    numeric = features.drop(columns=["model_text", *POSITION_LEAKAGE_FEATURES]).to_numpy(dtype=np.float32)
+def embedding_with_numeric_features(
+    embeddings: np.ndarray,
+    features: pd.DataFrame,
+    *,
+    include_position_features: bool = False,
+    include_symbolic_features: bool = True,
+) -> np.ndarray:
+    excluded = {"model_text"}
+    if not include_position_features:
+        excluded.update(POSITION_LEAKAGE_FEATURES)
+    if not include_symbolic_features:
+        excluded.update(SYMBOLIC_FEATURES)
+    numeric = features.drop(columns=list(excluded), errors="ignore").to_numpy(dtype=np.float32)
     return np.hstack([embeddings, numeric])
 
 
@@ -220,10 +252,7 @@ def apply_symbolic_overrides(features: pd.DataFrame, probabilities: np.ndarray) 
 
     symbolic_columns = [
         "sympy_error",
-        "sympy_equivalence_error",
-        "derivative_check_error",
         "linear_solution_check_error",
-        "probability_fraction_warning",
         "division_remainder_error",
         "polynomial_factorization_error",
     ]

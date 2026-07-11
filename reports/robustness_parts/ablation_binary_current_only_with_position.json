@@ -1,0 +1,6 @@
+{
+  "variant": "binary_current_only_with_position",
+  "label_macro_f1": 0.5642,
+  "incorrect_recall": 0.5483,
+  "first_error_accuracy": 0.3588
+}

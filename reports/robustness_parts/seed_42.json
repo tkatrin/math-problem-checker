@@ -6,33 +6,33 @@
   "test_problems": 800,
   "threshold": {
     "step_rows": 3501,
-    "label_accuracy": 0.8509,
-    "label_macro_f1": 0.5622,
-    "incorrect_recall": 0.1429,
-    "first_error_accuracy": 0.4062,
-    "first_error_macro_f1": 0.1572,
+    "label_accuracy": 0.8503,
+    "label_macro_f1": 0.5605,
+    "incorrect_recall": 0.1408,
+    "first_error_accuracy": 0.405,
+    "first_error_macro_f1": 0.1566,
     "all_correct_accuracy": 0.8272,
     "first_error_strategy": "threshold",
     "first_error_threshold": 0.9
   },
   "hard_label": {
     "step_rows": 3501,
-    "label_accuracy": 0.7795,
-    "label_macro_f1": 0.6055,
-    "incorrect_recall": 0.4244,
-    "first_error_accuracy": 0.3925,
-    "first_error_macro_f1": 0.1756,
-    "all_correct_accuracy": 0.6235,
+    "label_accuracy": 0.7789,
+    "label_macro_f1": 0.604,
+    "incorrect_recall": 0.4202,
+    "first_error_accuracy": 0.39,
+    "first_error_macro_f1": 0.1733,
+    "all_correct_accuracy": 0.6204,
     "first_error_strategy": "hard_label",
     "first_error_threshold": 0.5
   },
   "argmax": {
     "step_rows": 3501,
-    "label_accuracy": 0.5056,
-    "label_macro_f1": 0.4633,
+    "label_accuracy": 0.5079,
+    "label_macro_f1": 0.4651,
     "incorrect_recall": 0.8277,
-    "first_error_accuracy": 0.2675,
-    "first_error_macro_f1": 0.1588,
+    "first_error_accuracy": 0.2662,
+    "first_error_macro_f1": 0.1579,
     "all_correct_accuracy": 0.2407,
     "first_error_strategy": "argmax",
     "first_error_threshold": 0.15
@@ -48,7 +48,5 @@
       "first_error_accuracy": 0.42,
       "first_error_macro_f1": 0.3396
     }
-  },
-  "train_steps": 50006,
-  "model_path": "models/binary_prm800k_target_adapted.joblib"
+  }
 }
